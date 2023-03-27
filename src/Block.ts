@@ -1,6 +1,6 @@
-import * as crypto from 'crypto';
-import { ec } from 'elliptic';
-import Transaction from './Transaction';
+import * as crypto from "crypto";
+import { ec } from "elliptic";
+import Transaction from "./Transaction";
 
 export default class Block {
     // header
@@ -18,24 +18,17 @@ export default class Block {
     // hash and sign
     public hash: Buffer;
     public merkleRootHash: string;
-    public signature: ec.Signature | null;
 
-    constructor(
-        index: number, 
-        previousHash: string, 
-        transactions: Transaction[], 
-        difficulty: number
-    ) {
+    constructor(index: number, previousHash: string, transactions: Transaction[], difficulty: number) {
         this.index = index;
         this.timestamp = Date.now();
         this.previousHash = previousHash;
         this.transactions = transactions;
         this.difficulty = difficulty;
         this.nonce = 0;
-        
-        this.hash = Buffer.from("0".repeat(64), 'hex');
+
+        this.hash = Buffer.from("0".repeat(64), "hex");
         this.merkleRootHash = this.calculateMerkleRoot();
-        this.signature = null;
     }
 
     static genesisBlock(): Block {
@@ -45,21 +38,21 @@ export default class Block {
 
     calculateMerkleRoot(): string {
         if (this.transactions.length === 0) {
-            return ''
+            return "";
         }
 
-        let transactionHashes: string[] = this.transactions.map(tx => tx.hash.toString('hex'));
-        
+        let transactionHashes: string[] = this.transactions.map(tx => tx.hash.toString("hex"));
+
         while (transactionHashes.length > 1) {
             if (transactionHashes.length % 2 !== 0) {
-                transactionHashes.push(transactionHashes[transactionHashes.length - 1])
+                transactionHashes.push(transactionHashes[transactionHashes.length - 1]);
             }
 
             // hash each pair of hashes:
             const nextHashes: string[] = [];
             for (let i = 0; i < transactionHashes.length; i += 2) {
-                const combinedHash = transactionHashes[i] + transactionHashes[i+1];
-                nextHashes.push(crypto.createHash('sha3-256').update(combinedHash).digest('hex'))
+                const combinedHash = transactionHashes[i] + transactionHashes[i + 1];
+                nextHashes.push(crypto.createHash("sha3-256").update(combinedHash).digest("hex"));
             }
             transactionHashes = nextHashes;
         }
@@ -69,13 +62,10 @@ export default class Block {
     }
 
     calculateHash(): Buffer {
-        return crypto.createHash('sha3-256').update(
-            this.index + 
-            this.timestamp + 
-            this.previousHash + 
-            this.merkleRootHash + 
-            this.nonce
-        ).digest()
+        return crypto
+            .createHash("sha3-256")
+            .update(this.index + this.timestamp + this.previousHash + this.merkleRootHash + this.nonce)
+            .digest();
     }
 
     mineBlock(): void {
@@ -88,20 +78,21 @@ export default class Block {
             this.hash = this.calculateHash(); // rehash with new nonce
         }
 
-        console.log("Block mined: " + this.hash.toString('hex'));
+        console.log("Block mined: " + this.hash.toString("hex"));
     }
 
     toString() {
-        return `=================================\n` +
+        return (
+            `=================================\n` +
             `Block        : #${this.index}\n` +
-            `Timestamp    : ${new Date(this.timestamp)}\n` + 
+            `Timestamp    : ${new Date(this.timestamp)}\n` +
             `Transactions : ${this.transactions.length} transactions\n` +
-            `Hash         : 0x${this.hash.toString('hex')}\n` +
+            `Hash         : 0x${this.hash.toString("hex")}\n` +
             `Merkle Root  : 0x${this.merkleRootHash}\n` +
             `Parent Hash  : 0x${this.previousHash}\n` +
             `Difficulty   : ${this.difficulty}\n` +
             `Nonce        : ${this.nonce}\n` +
-            `Signature    : ${this.signature}\n` +
-            `=================================`;
+            `=================================`
+        );
     }
 }

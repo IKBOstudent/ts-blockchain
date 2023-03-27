@@ -3,37 +3,50 @@ import AccountStore from "./AccountStore";
 import Blockchain from "./Blockchain";
 import TransactionPool from "./TransactionPool";
 
-const accountStore = new AccountStore();
+export const accountStore = new AccountStore();
 
 const pers1 = new Account();
 const pers2 = new Account();
+const pers3_miner = new Account();
 accountStore.addAccount(pers1);
+accountStore.addAccount(pers2);
+accountStore.addAccount(pers3_miner);
 
-const pers1Address = pers1.address;
-const pers2Address = pers2.address;
+console.log(pers1.toString());
+console.log(pers2.toString());
+console.log(pers3_miner.toString());
 
-const tr1 = pers1.initiateTransaction(pers2Address, 20);
-console.log(tr1.toString())
-console.log(tr1.verifyTransaction())
+const blockchain = new Blockchain(pers3_miner);
 
-const tr2 = pers1.initiateTransaction(pers2Address, 10);
-console.log(tr2.toString())
-console.log(tr2.verifyTransaction())
+for (let i = 1; i < 4; i++) {
+    const tr1 = pers1.initiateTransaction(pers2.address, 10);
+    blockchain.transactionPool.addPendingTransaction(tr1);
+    const tr2 = pers2.initiateTransaction(pers1.address, 10);
+    blockchain.transactionPool.addPendingTransaction(tr2);
+}
 
-const tr3 = pers2.initiateTransaction(pers1Address, 30);
-console.log(tr3.toString())
-console.log(tr3.verifyTransaction())
+console.log(blockchain.transactionPool.toString());
 
+blockchain.addNewBlock();
 
-const blockchain = new Blockchain();
-console.log(blockchain.chain[0].toString());
+console.log(blockchain.transactionPool.toString());
 
-blockchain.transactionPool.addPendingTransaction(tr1);
-blockchain.transactionPool.addPendingTransaction(tr2);
-blockchain.transactionPool.addPendingTransaction(tr3);
+console.log(pers1.toString());
+console.log(pers2.toString());
+console.log(pers3_miner.toString());
 
-blockchain.addNewBlock()
+blockchain.addNewBlock();
 
-console.log(blockchain.chain[1].toString());
+console.log(blockchain.transactionPool.toString());
 
+console.log(pers1.toString());
+console.log(pers2.toString());
+console.log(pers3_miner.toString());
 
+blockchain.addNewBlock();
+
+console.log(blockchain.transactionPool.toString());
+
+console.log(pers1.toString());
+console.log(pers2.toString());
+console.log(pers3_miner.toString());
