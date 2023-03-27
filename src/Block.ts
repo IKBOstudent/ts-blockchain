@@ -1,4 +1,6 @@
-import SHA256 from 'crypto-js/sha256';
+import * as crypto from 'crypto';
+import { ec } from 'elliptic';
+import Transaction from './Transaction';
 
 export default class Block {
     // header
@@ -7,70 +9,99 @@ export default class Block {
     public previousHash: string;
 
     // transactions list
-    public transactions: Array<any>;
+    public transactions: Transaction[];
 
     // PoW parameters
     public difficulty: number;
     public nonce: number;
 
     // hash and sign
-    public hash: string;
-    public signature: string;
+    public hash: Buffer;
+    public merkleRootHash: string;
+    public signature: ec.Signature | null;
 
     constructor(
         index: number, 
-        timestamp: number, 
         previousHash: string, 
-        transactions: Array<any>, 
-        difficulty: number,
-        signature: string
+        transactions: Transaction[], 
+        difficulty: number
     ) {
         this.index = index;
-        this.timestamp = timestamp;
+        this.timestamp = Date.now();
         this.previousHash = previousHash;
         this.transactions = transactions;
         this.difficulty = difficulty;
         this.nonce = 0;
-
-        this.hash = "0".repeat(64);
-        this.signature = signature;
+        
+        this.hash = Buffer.from("0".repeat(64), 'hex');
+        this.merkleRootHash = this.calculateMerkleRoot();
+        this.signature = null;
     }
 
     static genesisBlock(): Block {
         // generates the first block in chain
-        return new this(0, Date.now(), "", [], 0, "");
+        return new this(0, "", [], 0);
     }
 
-    calculateHash(): string {
-        return SHA256(
+    calculateMerkleRoot(): string {
+        if (this.transactions.length === 0) {
+            return ''
+        }
+
+        let transactionHashes: string[] = this.transactions.map(tx => tx.hash.toString('hex'));
+        
+        while (transactionHashes.length > 1) {
+            if (transactionHashes.length % 2 !== 0) {
+                transactionHashes.push(transactionHashes[transactionHashes.length - 1])
+            }
+
+            // hash each pair of hashes:
+            const nextHashes: string[] = [];
+            for (let i = 0; i < transactionHashes.length; i += 2) {
+                const combinedHash = transactionHashes[i] + transactionHashes[i+1];
+                nextHashes.push(crypto.createHash('sha3-256').update(combinedHash).digest('hex'))
+            }
+            transactionHashes = nextHashes;
+        }
+
+        // return merkle root hash
+        return transactionHashes[0];
+    }
+
+    calculateHash(): Buffer {
+        return crypto.createHash('sha3-256').update(
             this.index + 
             this.timestamp + 
             this.previousHash + 
-            JSON.stringify(this.transactions) + 
+            this.merkleRootHash + 
             this.nonce
-        ).toString()
+        ).digest()
     }
 
     mineBlock(): void {
         // "000...00xxxxxxx" - PoW: hash starts with N=difficulty zeros;
 
         this.hash = this.calculateHash();
-        while (parseInt(this.hash, 16).toString(2).startsWith("0".repeat(this.difficulty))) {
+        let hashToBin = () => this.hash.reduce((acc, byte) => (acc += byte.toString(2).padStart(8, "0")), "");
+        while (!hashToBin().startsWith("0".repeat(this.difficulty))) {
             this.nonce++;
             this.hash = this.calculateHash(); // rehash with new nonce
         }
 
-        console.log("Block mined: " + this.hash);
+        console.log("Block mined: " + this.hash.toString('hex'));
     }
 
     toString() {
-        return `Block #${this.index}\n` +
+        return `=================================\n` +
+            `Block        : #${this.index}\n` +
             `Timestamp    : ${new Date(this.timestamp)}\n` + 
             `Transactions : ${this.transactions.length} transactions\n` +
-            `Hash         : 0x${this.hash}\n` +
+            `Hash         : 0x${this.hash.toString('hex')}\n` +
+            `Merkle Root  : 0x${this.merkleRootHash}\n` +
             `Parent Hash  : 0x${this.previousHash}\n` +
             `Difficulty   : ${this.difficulty}\n` +
             `Nonce        : ${this.nonce}\n` +
-            `Signature    : ${this.signature}`;
+            `Signature    : ${this.signature}\n` +
+            `=================================`;
     }
 }

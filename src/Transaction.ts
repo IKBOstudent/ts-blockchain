@@ -7,10 +7,19 @@ export default class Transaction {
     public receiver: string;
     public value: number;
     public fee: number;
+    
+    // transaction hash
     public hash: Buffer;
+
+    // signature by sender
     public signature: ec.Signature | null;
 
-    constructor(senderAddress: string, receiverAddress: string, value: number, fee: number) {
+    constructor(
+        senderAddress: string, 
+        receiverAddress: string, 
+        value: number, 
+        fee: number
+    ) {
         this.sender = senderAddress;
         this.receiver = receiverAddress;
         this.value = value;
@@ -44,7 +53,7 @@ export default class Transaction {
             this.signature.recoveryParam
         ).encode('hex');
 
-        // if address of sender and signature publicKey hash match => signature is valid
+        // if address of sender === signature publicKey hash => signature is valid
         return Account.generateAddress(recoveredPublicKey) === this.sender;
     }
 

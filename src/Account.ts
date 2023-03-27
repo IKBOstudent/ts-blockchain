@@ -8,26 +8,29 @@ const TEMP__TRANSACTION_FEE = 1;
 const EC = new ec('secp256k1');
 
 export default class Account {
-    public readonly address: string;
+    public readonly address: string; // 20 first bytes of hashed public key
     public balance: number;
     public transactionCount: number;
 
-    private readonly keyPair: ec.KeyPair;
     private readonly publicKey: string;
     private readonly privateKey: string;
 
     constructor() {
         this.balance = TEMP__INITIAL_BALANCE;
-        this.keyPair = EC.genKeyPair();
-        this.privateKey = this.keyPair.getPrivate('hex');
-        this.publicKey = this.keyPair.getPublic('hex');
+        const keyPair = EC.genKeyPair();
+        this.privateKey = keyPair.getPrivate('hex');
+        this.publicKey = keyPair.getPublic('hex');
 
         this.address = Account.generateAddress(this.publicKey);
         this.transactionCount = 0;
     }
 
     static generateAddress(publicKey: string): string {
-        return crypto.createHash('sha3-256').update(publicKey.slice(2)).digest('hex').slice(-40);
+        return crypto
+            .createHash('sha3-256')
+            .update(publicKey.slice(2))
+            .digest('hex')
+            .slice(-40);
     }
 
     initiateTransaction(receiverAddress: string, value: number): Transaction {
@@ -35,7 +38,12 @@ export default class Account {
             throw new Error("Insufficitent funds");
         }
 
-        const transaction = new Transaction(this.address, receiverAddress, value, TEMP__TRANSACTION_FEE);
+        const transaction = new Transaction(
+            this.address, 
+            receiverAddress, 
+            value, 
+            TEMP__TRANSACTION_FEE
+        );
         transaction.signature = this.signTransaction(transaction.hash);
         return transaction;
     }
