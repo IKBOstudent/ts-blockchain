@@ -1,8 +1,8 @@
-import { globalStateStore } from '.';
-import Account from './Account';
-import Block from './Block';
-import Transaction from './Transaction';
-import TransactionPool from './TransactionPool';
+import { globalStateStore } from ".";
+import Account from "./Account";
+import Block from "./Block";
+import Transaction from "./Transaction";
+import TransactionPool from "./TransactionPool";
 
 const TEMP__DIFFICULTY = 8;
 const BLOCK_FEE_LIMIT = 4;
@@ -27,8 +27,8 @@ export default class Blockchain {
         let totalFees = 0;
         for (const tx of minedBlock.transactions) {
             try {
-                tx.executeTransaction(minedBlock.index, minedBlock.hash.toString('hex'));
-                console.log('Executed');
+                tx.executeTransaction(minedBlock.index, minedBlock.hash.toString("hex"));
+                console.log("Executed");
             } catch (e) {
                 console.log(`Transaction failed: ${e}`);
             }
@@ -46,10 +46,10 @@ export default class Blockchain {
         const newBlock = new Block(
             this.miner.address,
             parent.index + 1,
-            parent.hash.toString('hex'),
+            parent.hash.toString("hex"),
             this.transactionPool.pickTransactions(BLOCK_FEE_LIMIT),
             TEMP__DIFFICULTY,
-            globalStateStore.getMerkleRootHash(),
+            globalStateStore.getMerkleRootHash()
         );
 
         newBlock.mineBlock();
@@ -58,7 +58,7 @@ export default class Blockchain {
         console.log(newBlock.toJSON());
 
         this.executeTransactions(newBlock);
-        this.transactionPool.removeConfirmed(newBlock.transactions.map((tx) => tx.hash));
+        this.transactionPool.removeConfirmed(newBlock.transactions.map(tx => tx.hash));
     }
 
     addNewTransaction(newTransaction: Transaction) {
@@ -70,5 +70,12 @@ export default class Blockchain {
         } catch (e) {
             console.log(`transaction rejected: ${e}`);
         }
+    }
+
+    toJSON() {
+        return {
+            blockchain: this.chain.map(block => block.toJSON()),
+            pendingTransactions: this.transactionPool.pendingTransactions.map(tx => tx.toJSON()),
+        };
     }
 }
