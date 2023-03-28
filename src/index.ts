@@ -1,52 +1,38 @@
-import Account from "./Account";
-import AccountStore from "./AccountStore";
-import Blockchain from "./Blockchain";
-import TransactionPool from "./TransactionPool";
+import express from 'express';
+import Account from './Account';
+import StateStore from './StateStore';
+import Blockchain from './Blockchain';
 
-export const accountStore = new AccountStore();
+const app = express();
+app.use(express.json());
 
-const pers1 = new Account();
-const pers2 = new Account();
-const pers3_miner = new Account();
-accountStore.addAccount(pers1);
-accountStore.addAccount(pers2);
-accountStore.addAccount(pers3_miner);
+export const globalStateStore = new StateStore();
 
-console.log(pers1.toString());
-console.log(pers2.toString());
-console.log(pers3_miner.toString());
+app.get('/', (req, res) => {
+    res.send('running app...');
+});
 
-const blockchain = new Blockchain(pers3_miner);
+app.get('/state', (req, res) => {
+    res.send(globalStateStore.toJSON());
+});
 
-for (let i = 1; i < 4; i++) {
-    const tr1 = pers1.initiateTransaction(pers2.address, 10);
-    blockchain.transactionPool.addPendingTransaction(tr1);
-    const tr2 = pers2.initiateTransaction(pers1.address, 10);
-    blockchain.transactionPool.addPendingTransaction(tr2);
-}
+app.get(`/nodes/:id`, (req, res) => {
+    const account = globalStateStore.getAccountByAddress(req.params.id.slice(2));
+    if (account) {
+        res.send(account.toJSON());
+    } else {
+        res.send('No such account');
+    }
+});
 
-console.log(blockchain.transactionPool.toString());
+app.post('/nodes', (req, res) => {
+    const pers = new Account();
+    globalStateStore.addAccount(pers);
 
-blockchain.addNewBlock();
+    res.send(pers.toJSON());
+});
 
-console.log(blockchain.transactionPool.toString());
-
-console.log(pers1.toString());
-console.log(pers2.toString());
-console.log(pers3_miner.toString());
-
-blockchain.addNewBlock();
-
-console.log(blockchain.transactionPool.toString());
-
-console.log(pers1.toString());
-console.log(pers2.toString());
-console.log(pers3_miner.toString());
-
-blockchain.addNewBlock();
-
-console.log(blockchain.transactionPool.toString());
-
-console.log(pers1.toString());
-console.log(pers2.toString());
-console.log(pers3_miner.toString());
+const PORT = 8888;
+app.listen(PORT, () => {
+    console.log(`[server]: Server is running at http://localhost:${PORT}`);
+});

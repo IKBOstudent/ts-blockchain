@@ -1,16 +1,17 @@
-import Account from "./Account";
-import Block from "./Block";
-import Transaction from "./Transaction";
-import TransactionPool from "./TransactionPool";
+import { globalStateStore } from '.';
+import Account from './Account';
+import Block from './Block';
+import Transaction from './Transaction';
+import TransactionPool from './TransactionPool';
 
-const TEMP__DIFFICULTY = 4;
-const BLOCK_FEE_LIMIT = 5;
-const MINING_REWARD = 2;
+const TEMP__DIFFICULTY = 8;
+const BLOCK_FEE_LIMIT = 4;
+const MINING_REWARD = 10;
 
 export default class Blockchain {
     public miner: Account;
     public chain: Block[];
-    public transactionPool: TransactionPool;
+    private transactionPool: TransactionPool;
 
     constructor(miner: Account) {
         this.miner = miner;
@@ -26,36 +27,48 @@ export default class Blockchain {
         let totalFees = 0;
         for (const tx of minedBlock.transactions) {
             try {
-                tx.executeTransaction(minedBlock.index, minedBlock.hash.toString("hex"));
-
-                console.log("Executed\n" + tx.toString());
+                tx.executeTransaction(minedBlock.index, minedBlock.hash.toString('hex'));
+                console.log('Executed');
             } catch (e) {
-                console.log(`Transaction failed: ${e}\n`, tx.toString());
+                console.log(`Transaction failed: ${e}`);
             }
-            // miners receives fee anyway
+            console.log(tx.toJSON());
+            // miner receives fee anyway
             totalFees += tx.fee;
         }
 
         Transaction.executeMiningRewardTransaction(this.miner.address, totalFees + MINING_REWARD);
     }
 
-    addNewBlock(): Block {
+    addNewBlock(): void {
         const parent = this.getLastBlock();
+
         const newBlock = new Block(
+            this.miner.address,
             parent.index + 1,
-            parent.hash.toString("hex"),
+            parent.hash.toString('hex'),
             this.transactionPool.pickTransactions(BLOCK_FEE_LIMIT),
-            TEMP__DIFFICULTY
+            TEMP__DIFFICULTY,
+            globalStateStore.getMerkleRootHash(),
         );
 
         newBlock.mineBlock();
         this.chain.push(newBlock);
-        console.log(newBlock.toString());
+
+        console.log(newBlock.toJSON());
 
         this.executeTransactions(newBlock);
+        this.transactionPool.removeConfirmed(newBlock.transactions.map((tx) => tx.hash));
+    }
 
-        this.transactionPool.removeConfirmed(newBlock.transactions.map(tx => tx.hash));
-
-        return newBlock;
+    addNewTransaction(newTransaction: Transaction) {
+        try {
+            this.transactionPool.addPendingTransaction(newTransaction);
+            if (this.transactionPool.getTotalFeePending() >= BLOCK_FEE_LIMIT) {
+                this.addNewBlock();
+            }
+        } catch (e) {
+            console.log(`transaction rejected: ${e}`);
+        }
     }
 }
