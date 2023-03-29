@@ -19,7 +19,7 @@ export default class Transaction {
 
     // additional info
     public status: 'PENDING' | 'CONFIRMED' | 'FAILED';
-    public blockIndex: number;
+    public blockIndex: number | null;
     public blockHash: string;
 
     constructor(
@@ -67,24 +67,22 @@ export default class Transaction {
         this.blockIndex = blockIndex;
         this.blockHash = blockHash;
 
-        const senderAccount = globalStateStore.getAccountByAddress(this.sender) || null;
-        const receiverAccount = globalStateStore.getAccountByAddress(this.receiver) || null;
+        const senderAccount = globalStateStore.getAccountByAddress(this.sender);
+        const receiverAccount = globalStateStore.getAccountByAddress(this.receiver);
 
-        let errorMessage = '';
-
-        if (senderAccount === null) {
-            errorMessage = 'Sender address invalid';
-        } else if (receiverAccount === null) {
-            errorMessage = 'Receiver address invalid';
-        } else if (senderAccount.balance < this.value + this.fee) {
-            errorMessage = 'Sender has insufficient funds';
-        } else if (senderAccount.nonce !== this.nonce) {
-            errorMessage = 'Nonce is invalid';
-        }
-
-        if (errorMessage) {
+        if (!senderAccount) {
             this.status = 'FAILED';
-            throw new Error(errorMessage);
+            throw new Error('Sender address invalid');
+        }
+        if (!receiverAccount) {
+            this.status = 'FAILED';
+            throw new Error('Receiver address invalid');
+        } else if (senderAccount.balance < this.value + this.fee) {
+            this.status = 'FAILED';
+            throw new Error('Sender has insufficient funds');
+        } else if (senderAccount.nonce !== this.nonce) {
+            this.status = 'FAILED';
+            throw new Error('Nonce is invalid');
         }
 
         senderAccount.balance -= this.value + this.fee;
@@ -96,7 +94,9 @@ export default class Transaction {
 
     static executeMiningRewardTransaction(minerAddress: string, reward: number) {
         const minerAccount = globalStateStore.getAccountByAddress(minerAddress);
-        minerAccount.balance += reward;
+        if (minerAccount) {
+            minerAccount.balance += reward;
+        }
     }
 
     toJSON() {
