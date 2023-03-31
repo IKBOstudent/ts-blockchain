@@ -1,172 +1,213 @@
 import * as net from 'net';
+import * as crypto from 'crypto';
 import { globalStateStore } from '.';
 import Account from './Account';
 import Blockchain from './Blockchain';
+import KademliaTable from './KademliaTable';
 
-const TEMP__NUM_NODES = 3;
-const START_PORT = 3001;
+const TEMP__HOST = '127.0.0.1';
+const MAX_KADEMLIA_SIZE = 20;
 
-enum TYPES {
-    MESSAGE = 'MESSAGE',
-    QUERY = 'QUERY',
-}
+const BOOTSTRAPPING_NODE_HOST = TEMP__HOST;
+const BOOTSTRAPPING_NODE_PORT = 3001;
 
 enum MESSAGE_TYPE {
-    BROADCAST_HELLO = 'BROADCAST_HELLO',
-    BROADCAST_NEW_ACCOUNT = 'BROADCAST_NEW_ACCOUNT',
-    BROADCAST_NEW_BLOCK = 'BROADCAST_NEW_BLOCK',
+    PING = 'PING',
+    PONG = 'PONG',
 
-    RESPONSE_CONNECTION_STATUS = 'RESPONSE_CONNECTION_STATUS',
-    RESPONSE_GLOBAL_STATE = 'RESPONSE_GLOBAL_STATE',
-    RESPONSE_LATEST_BLOCK = 'RESPONSE_LATEST_BLOCK',
+    HANDSHAKE = 'HANDSHAKE',
+    RESPONSE_CLOSEST_NODES = 'RESPONSE_CLOSEST_NODES',
 }
 
-enum QUERY_TYPE {
-    GET_CONNECTION_STATUS = 'GET_CONNECTION_STATUS',
-    GET_GLOBAL_STATE = 'GET_GLOBAL_STATE',
-    GET_LATEST_BLOCK = 'GET_LATEST_BLOCK',
+export interface Peer {
+    hashID: string;
+    host: string;
+    portSocket: number;
+    portToConnect: number;
 }
 
 export default class Node {
+    // network info
     port: number;
     server: net.Server;
-    openConnections: Map<number, net.Socket>;
-
-    account: Account;
+    nodeID: Buffer;
+    DHT: KademliaTable;
+    peers: Map<string, { socket: net.Socket; hash: string }>;
 
     constructor(port: number) {
         this.port = port;
-        this.openConnections = new Map();
         this.server = net.createServer();
+        this.nodeID = Node.generateNodeID();
+        this.DHT = new KademliaTable(this.nodeID, MAX_KADEMLIA_SIZE);
 
-        this.account = new Account();
-        globalStateStore.addAccount(this.account);
+        this.peers = new Map();
+    }
+
+    static generateNodeID(): Buffer {
+        return crypto.randomBytes(20);
     }
 
     initServer() {
-        this.server.addListener('connection', (socket) => {
+        this.server.on('connection', (socket) => {
             console.log(
-                `[node ${this.port} | server] established connection: ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`,
+                `[node ${this.port} | server] established connection: ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`
+                    .yellow,
             );
-            this.handleConnection('server', socket);
-
-            socket.on('error', (err) => {
-                console.log(`[node ${this.port} | server] connection failed with ${err}`);
-            });
+            if (socket.remoteAddress && socket.remotePort) {
+                this.handleConnection('server', socket);
+            } else {
+                console.log(`[node ${this.port} | server] connection invalid`);
+            }
         });
 
-        this.server.listen({ port: this.port, host: '127.0.0.1' }, () => {
-            console.log(`[node ${this.port} | server] server listening on PORT ${this.port}`);
+        this.server.listen({ port: this.port, host: TEMP__HOST }, () => {
+            console.log(
+                `[node ${this.port} | server] server listening on PORT ${
+                    this.port
+                }\n           | id: ${this.nodeID.toString('hex')}`,
+            );
         });
     }
 
-    initConnections() {
-        for (let i = 0; i < TEMP__NUM_NODES; i++) {
-            const port = START_PORT + i;
-            if (port !== this.port) {
-                this.connectToPeer(port);
-            }
+    joinNetwork() {
+        if (this.port !== BOOTSTRAPPING_NODE_PORT) {
+            setTimeout(() => {
+                console.log('connecting to bootstrapping node');
+                this.connectToBootstrappingNode();
+            }, 2000);
         }
     }
 
-    connectToPeer(port: number): void {
-        // create connection with each peer
-        const socket = net.createConnection({ port });
+    connectToBootstrappingNode(): void {
+        const socket = net.createConnection({ port: BOOTSTRAPPING_NODE_PORT });
 
         socket.on('connect', () => {
             console.log(
-                `[node ${this.port} | client] established connection ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`,
+                `[node ${this.port} | client] established connection ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`
+                    .yellow,
             );
 
-            this.openConnections.set(port, socket);
+            this.sendData(socket, MESSAGE_TYPE.HANDSHAKE);
             this.handleConnection('client', socket);
         });
+    }
 
-        socket.on('error', (err) => {
-            console.log(`[node ${this.port} | client] connection failed with ${err}`);
+    connectToClosestNode(peer: Peer): void {
+        console.log('Trying to connect to ', peer.portToConnect);
+        const socket = net.createConnection({ port: peer.portToConnect }, () => {
+            console.log(
+                `[node ${this.port} | client] established connection ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`
+                    .yellow,
+            );
 
-            if (!this.openConnections.get(port)) {
-                console.log(`[node ${this.port} | client] reconnecting to PORT ${port}...`);
-                setTimeout(() => {
-                    this.connectToPeer(port);
-                }, 3000);
-            } else {
-                console.log(`[node ${this.port} | client] disconnected from PORT ${port}`);
-                this.openConnections.delete(port);
-            }
+            this.sendData(socket, MESSAGE_TYPE.HANDSHAKE);
+            this.peers.set(`${socket.remoteAddress}:${socket.remotePort}`, {
+                socket,
+                hash: peer.hashID,
+            });
+            this.handleConnection('client', socket);
         });
     }
 
     public handleConnection(type: 'client' | 'server', socket: net.Socket): void {
         socket.on('data', (response) => {
             console.log(
-                `[node ${this.port} | ${type}] received message ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`,
+                `[node ${this.port} | ${type}] received message ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`
+                    .cyan,
             );
 
             let data = JSON.parse(response.toString());
-            console.log('Content:', data);
+            console.log('           | content:', data.type);
 
-            const responseType: TYPES = data.type;
-            if (responseType === TYPES.MESSAGE) {
-                console.log(data.message);
-            } else {
-                switch (data.queryType) {
-                    case QUERY_TYPE.GET_CONNECTION_STATUS:
-                        this.sendData(socket, MESSAGE_TYPE.RESPONSE_CONNECTION_STATUS);
-                        break;
+            switch (data.type) {
+                case MESSAGE_TYPE.PING:
+                    this.sendData(socket, MESSAGE_TYPE.PONG);
+                    break;
 
-                    case QUERY_TYPE.GET_GLOBAL_STATE:
-                        this.sendData(socket, MESSAGE_TYPE.RESPONSE_GLOBAL_STATE);
-                        break;
+                case MESSAGE_TYPE.PONG:
+                    console.log('PONG');
+                    break;
 
-                    case QUERY_TYPE.GET_LATEST_BLOCK:
-                        this.sendData(socket, MESSAGE_TYPE.RESPONSE_LATEST_BLOCK);
-                        break;
-                }
+                case MESSAGE_TYPE.HANDSHAKE:
+                    console.log('adding new node into DHT');
+                    console.log(data.message);
+                    const newPeer: Peer = JSON.parse(data.message);
+
+                    this.DHT.addNewNode(newPeer);
+                    this.peers.set(`${socket.remoteAddress}:${socket.remotePort}`, {
+                        socket,
+                        hash: newPeer.hashID,
+                    });
+                    console.log('node added');
+
+                    if (this.port === BOOTSTRAPPING_NODE_PORT) {
+                        this.sendData(socket, MESSAGE_TYPE.RESPONSE_CLOSEST_NODES, newPeer.hashID);
+                    }
+
+                    break;
+
+                case MESSAGE_TYPE.RESPONSE_CLOSEST_NODES:
+                    console.log('connecting to discovered nodes');
+                    const nodes = JSON.parse(data.message);
+                    nodes.forEach((peer: Peer) => this.DHT.addNewNode(peer));
+                    nodes.forEach((peer: Peer) => this.connectToClosestNode(peer));
+                    console.log('nodes added');
+
+                    break;
+
+                default:
+                    console.warn('Invalid message type');
             }
         });
 
+        socket.on('error', (err) => {
+            console.log(`[node ${this.port} | ${type}] connection failed with ${err}`.red);
+        });
+
         socket.on('close', () => {
+            if (socket.remoteAddress && socket.remotePort) {
+                const peer = this.peers.get(`${socket.remoteAddress}:${socket.remotePort}`);
+                if (peer) {
+                    console.log(`removing ${peer.hash} from DHT`);
+                    console.log(this.DHT.removeNode(peer.hash) ? 'removed' : 'not removed');
+                    this.peers.delete(`${socket.remoteAddress}:${socket.remotePort}`);
+                }
+            }
+
             console.log(
-                `[node ${this.port} | ${type}] connection closed with ${socket.remoteAddress}:${socket.remotePort}`,
+                `[node ${this.port} | ${type}] connection closed with ${socket.remoteAddress}:${socket.remotePort}`
+                    .dim,
             );
         });
     }
 
-    sendData(socket: net.Socket, type: MESSAGE_TYPE) {
-        let data: { type: TYPES; messageType?: MESSAGE_TYPE; message?: string } = {
-            type: TYPES.MESSAGE,
+    sendData(socket: net.Socket, type: MESSAGE_TYPE, optionalData?: string) {
+        let data: { type: MESSAGE_TYPE; message?: string } = {
+            type: type,
         };
 
         switch (type) {
-            case MESSAGE_TYPE.BROADCAST_HELLO:
-                data.messageType = MESSAGE_TYPE.BROADCAST_HELLO;
-                data.message = `Hello from peer ${this.port} aka ${socket.localPort}`;
+            case MESSAGE_TYPE.PING:
+                data.message = `PING`;
                 break;
 
-            case MESSAGE_TYPE.BROADCAST_NEW_ACCOUNT:
-                data.messageType = MESSAGE_TYPE.BROADCAST_NEW_ACCOUNT;
-                data.message = JSON.stringify(this.account.toJSON());
+            case MESSAGE_TYPE.PONG:
+                data.message = `PONG`;
                 break;
 
-            case MESSAGE_TYPE.BROADCAST_NEW_BLOCK:
-                data.messageType = MESSAGE_TYPE.BROADCAST_NEW_BLOCK;
-                data.message = JSON.stringify('new block');
+            case MESSAGE_TYPE.HANDSHAKE:
+                data.message = JSON.stringify({
+                    hashID: this.nodeID.toString('hex'),
+                    host: TEMP__HOST,
+                    portSocket: socket.localPort,
+                    portToConnect: this.port,
+                } as Peer);
                 break;
 
-            case MESSAGE_TYPE.RESPONSE_CONNECTION_STATUS:
-                data.messageType = MESSAGE_TYPE.RESPONSE_CONNECTION_STATUS;
-                data.message = `Connection ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort} is open`;
-                break;
-
-            case MESSAGE_TYPE.RESPONSE_GLOBAL_STATE:
-                data.messageType = MESSAGE_TYPE.RESPONSE_GLOBAL_STATE;
-                data.message = JSON.stringify(globalStateStore.toJSON());
-                break;
-
-            case MESSAGE_TYPE.RESPONSE_LATEST_BLOCK:
-                data.messageType = MESSAGE_TYPE.RESPONSE_LATEST_BLOCK;
-                data.message = JSON.stringify('latest block');
+            case MESSAGE_TYPE.RESPONSE_CLOSEST_NODES:
+                data.message = JSON.stringify(
+                    optionalData ? this.DHT.getClosestNodes(optionalData) : [],
+                );
                 break;
         }
 
@@ -177,42 +218,24 @@ export default class Node {
         );
     }
 
-    queryData(socket: net.Socket, type: QUERY_TYPE) {
-        let data = { type: TYPES.QUERY, queryType: type };
-        socket.write(JSON.stringify(data));
-
-        console.log(
-            `[node ${this.port} | client] requested data ${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`,
-        );
-    }
-
-    getAccount() {
-        console.log(this.account.toJSON());
-    }
-
     getConnections() {
-        console.log('client connections:');
-        [...this.openConnections.values()].map((socket) =>
-            console.log(
-                `${socket.localAddress}:${socket.localPort} -> ${socket.remoteAddress}:${socket.remotePort}`,
-            ),
-        );
+        console.log('open sockets: [');
+        this.peers.forEach((val, key) => console.log(`${key}  |  ${val.hash}`));
+        console.log(']');
+
+        this.DHT.toJSON().forEach((val) => console.log(val[0], ':', val[1]));
     }
 
-    broadcast() {
-        for (const socket of this.openConnections.values()) {
-            this.sendData(socket, MESSAGE_TYPE.BROADCAST_HELLO);
+    broadcastPing() {
+        for (const { socket } of this.peers.values()) {
+            this.sendData(socket, MESSAGE_TYPE.PING);
         }
     }
 
-    checkConnecion() {
-        for (let i = 0; i < TEMP__NUM_NODES; i++) {
-            const port = START_PORT + i;
-            const socket = this.openConnections.get(port);
-            if (port !== this.port && socket) {
-                this.queryData(socket, QUERY_TYPE.GET_CONNECTION_STATUS);
-                break;
-            }
+    ping(port: number) {
+        const peer = this.peers.get(`${TEMP__HOST}:${port}`);
+        if (peer) {
+            this.sendData(peer.socket, MESSAGE_TYPE.PING);
         }
     }
 }
