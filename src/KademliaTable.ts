@@ -1,15 +1,17 @@
-import * as crypto from 'crypto';
-import { Peer } from './Node';
+import * as crypto from "crypto";
+import { Peer } from "./Node";
 
 export default class KademliaTable {
     nodeID: Buffer;
+    bootNode: boolean;
     size: number;
     buckets: Peer[][];
 
-    constructor(nodeID: Buffer, size: number) {
+    constructor(nodeID: Buffer, size: number, bootNode = false) {
         this.nodeID = nodeID;
         this.size = size;
         this.buckets = [];
+        this.bootNode = bootNode;
 
         // nodes are distributed in buckets of distances from 0 to 160
         for (let i = 0; i < 160; i++) {
@@ -17,36 +19,36 @@ export default class KademliaTable {
         }
     }
 
-    addNewNode(peer: Peer) {
-        const newNodeID = Buffer.from(peer.hashID, 'hex');
-        if (newNodeID === this.nodeID) {
-            return;
-        }
+    addNewNode(peer: Peer): { status: boolean; node?: Peer } {
+        const newNodeID = Buffer.from(peer.hashID, "hex");
 
         const bucketIndex = KademliaTable.getBucketIndex(this.nodeID, newNodeID);
         const bucket = this.buckets[bucketIndex];
-
-        if (bucket.length < this.size) {
-            bucket.push(peer);
-        } else {
-            bucket.pop();
-            bucket.push(peer);
+        let status = true;
+        let node: Peer | undefined;
+        if (bucket.length >= this.size && !this.bootNode) {
+            status = false;
+            node = bucket.pop();
+            console.log(`bucket full. evicting ${node?.hashID}`.bgMagenta);
         }
+
+        bucket.push(peer);
 
         bucket.sort((a, b) =>
             Buffer.compare(
-                KademliaTable.getXORdistance(this.nodeID, Buffer.from(a.hashID, 'hex')),
-                KademliaTable.getXORdistance(this.nodeID, Buffer.from(b.hashID, 'hex')),
-            ),
+                KademliaTable.getXORdistance(this.nodeID, Buffer.from(a.hashID, "hex")),
+                KademliaTable.getXORdistance(this.nodeID, Buffer.from(b.hashID, "hex"))
+            )
         );
+        return { status, node };
     }
 
     removeNode(id: string): boolean {
-        const nodeID = Buffer.from(id, 'hex');
+        const nodeID = Buffer.from(id, "hex");
         const bucketIndex = KademliaTable.getBucketIndex(this.nodeID, nodeID);
         const bucket = this.buckets[bucketIndex];
         if (bucket.length !== 0) {
-            const index = bucket.findIndex((peer) => peer.hashID === id);
+            const index = bucket.findIndex(peer => peer.hashID === id);
             if (index >= 0) {
                 bucket.splice(index, 1);
                 return true;
@@ -56,12 +58,12 @@ export default class KademliaTable {
     }
 
     getClosestNodes(id: string): Peer[] {
-        const nodeID = Buffer.from(id, 'hex');
+        const nodeID = Buffer.from(id, "hex");
         const nodes: Peer[] = [];
         for (let i = 0; i < 160; i++) {
             const bucket = this.buckets[i];
 
-            bucket.forEach((peer) => {
+            bucket.forEach(peer => {
                 if (peer.hashID !== id) {
                     nodes.push(peer);
                 }
@@ -71,9 +73,9 @@ export default class KademliaTable {
         return nodes
             .sort((a, b) =>
                 Buffer.compare(
-                    KademliaTable.getXORdistance(nodeID, Buffer.from(a.hashID, 'hex')),
-                    KademliaTable.getXORdistance(nodeID, Buffer.from(b.hashID, 'hex')),
-                ),
+                    KademliaTable.getXORdistance(nodeID, Buffer.from(a.hashID, "hex")),
+                    KademliaTable.getXORdistance(nodeID, Buffer.from(b.hashID, "hex"))
+                )
             )
             .slice(0, this.size);
     }
@@ -95,10 +97,10 @@ export default class KademliaTable {
     }
 
     toJSON() {
-        const nodes: Array<[number, string[]]> = [];
-        for (let i = 0; i < 160 && nodes.length < this.size; i++) {
+        const nodes: Array<[number, Peer[]]> = [];
+        for (let i = 0; i < 160; i++) {
             if (this.buckets[i].length > 0) {
-                nodes.push([i, this.buckets[i].map((peer) => peer.hashID)]);
+                nodes.push([i, this.buckets[i]]);
             }
         }
 
