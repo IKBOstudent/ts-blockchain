@@ -1,56 +1,44 @@
-import * as crypto from 'crypto';
-import { ec } from 'elliptic';
-import Transaction from './Transaction';
+import { Transaction } from "./Transaction";
+import { signTransaction } from "./utils";
 
 const TEMP__INITIAL_BALANCE = 100;
 const TEMP__TRANSACTION_FEE = 1;
 
-const EC = new ec('secp256k1');
+export interface AccountType {
+    address: string;
+    balance?: number;
+    nonce?: number;
+}
 
-export default class Account {
+export class Account implements AccountType {
     public readonly address: string; // 20 first bytes of hashed public key
     public balance: number;
     public nonce: number; // amount of transactions confirmed
 
-    private readonly publicKey: string;
-    private readonly privateKey: string;
-
-    constructor() {
-        const keyPair = EC.genKeyPair();
-        this.privateKey = keyPair.getPrivate('hex');
-        this.publicKey = keyPair.getPublic('hex');
-
-        this.address = Account.generateAddress(this.publicKey);
-        this.balance = TEMP__INITIAL_BALANCE;
-        this.nonce = 0;
+    constructor(account: AccountType) {
+        const { address, balance = 100, nonce = 0 } = account;
+        this.address = address;
+        this.balance = balance;
+        this.nonce = nonce;
     }
 
-    static generateAddress(publicKey: string): string {
-        return crypto.createHash('sha3-256').update(publicKey.slice(2)).digest('hex').slice(-40);
-    }
-
-    initiateTransaction(receiverAddress: string, value: number, nonce: number): Transaction {
-        const transaction = new Transaction(
-            this.address,
-            receiverAddress,
+    initiateTransaction(receiver: string, value: number, nonce: number, privateKey: string): Transaction {
+        const transaction = new Transaction({
+            sender: this.address,
+            receiver,
             value,
-            TEMP__TRANSACTION_FEE,
+            fee: TEMP__TRANSACTION_FEE,
             nonce,
-        );
-
-        transaction.signature = this.signTransaction(transaction.hash);
+        });
+        const { signature, recoveryParam } = signTransaction(transaction.hash, privateKey);
+        transaction.signature = signature;
+        transaction.recoveryParam = recoveryParam;
         return transaction;
     }
 
-    signTransaction(transactionHash: Buffer): ec.Signature {
-        return EC.sign(transactionHash, EC.keyFromPrivate(this.privateKey));
-    }
-
-    toJSON() {
+    toJSON(): AccountType {
         return {
-            address: `0x${this.address}`,
-            publicKey: `0x${this.publicKey}`,
-            privateKey: `0x${this.privateKey}`,
+            address: this.address,
             balance: this.balance,
             nonce: this.nonce,
         };

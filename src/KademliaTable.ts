@@ -1,5 +1,5 @@
-import * as crypto from 'crypto';
-import { HASH_LEN, Peer } from './Node';
+import * as crypto from "crypto";
+import { HASH_LEN, Peer } from "./Node";
 
 export default class KademliaTable {
     nodeID: Buffer;
@@ -20,7 +20,7 @@ export default class KademliaTable {
     }
 
     addNewNode(peer: Peer): { status: boolean; node?: Peer } {
-        const newNodeID = Buffer.from(peer.hashID, 'hex');
+        const newNodeID = Buffer.from(peer.hashID, "hex");
 
         const bucketIndex = KademliaTable.getBucketIndex(this.nodeID, newNodeID);
         const bucket = this.buckets[bucketIndex];
@@ -36,19 +36,19 @@ export default class KademliaTable {
 
         bucket.sort((a, b) =>
             Buffer.compare(
-                KademliaTable.getXORdistance(this.nodeID, Buffer.from(a.hashID, 'hex')),
-                KademliaTable.getXORdistance(this.nodeID, Buffer.from(b.hashID, 'hex')),
-            ),
+                KademliaTable.getXORdistance(this.nodeID, Buffer.from(a.hashID, "hex")),
+                KademliaTable.getXORdistance(this.nodeID, Buffer.from(b.hashID, "hex"))
+            )
         );
         return { status, node };
     }
 
     removeNode(id: string): boolean {
-        const nodeID = Buffer.from(id, 'hex');
+        const nodeID = Buffer.from(id, "hex");
         const bucketIndex = KademliaTable.getBucketIndex(this.nodeID, nodeID);
         const bucket = this.buckets[bucketIndex];
         if (bucket.length !== 0) {
-            const index = bucket.findIndex((peer) => peer.hashID === id);
+            const index = bucket.findIndex(peer => peer.hashID === id);
             if (index >= 0) {
                 bucket.splice(index, 1);
                 return true;
@@ -57,13 +57,13 @@ export default class KademliaTable {
         return false;
     }
 
-    getClosestNodes(id: string): Peer[] {
-        const nodeID = Buffer.from(id, 'hex');
+    getClosestNodes(id: string, count: number): Peer[] {
+        const nodeID = Buffer.from(id, "hex");
         const nodes: Peer[] = [];
         for (let i = 0; i < HASH_LEN * 8; i++) {
             const bucket = this.buckets[i];
 
-            bucket.forEach((peer) => {
+            bucket.forEach(peer => {
                 if (peer.hashID !== id) {
                     nodes.push(peer);
                 }
@@ -73,11 +73,11 @@ export default class KademliaTable {
         return nodes
             .sort((a, b) =>
                 Buffer.compare(
-                    KademliaTable.getXORdistance(nodeID, Buffer.from(a.hashID, 'hex')),
-                    KademliaTable.getXORdistance(nodeID, Buffer.from(b.hashID, 'hex')),
-                ),
+                    KademliaTable.getXORdistance(nodeID, Buffer.from(a.hashID, "hex")),
+                    KademliaTable.getXORdistance(nodeID, Buffer.from(b.hashID, "hex"))
+                )
             )
-            .slice(0, this.size);
+            .slice(0, count);
     }
 
     static getXORdistance(hashA: Buffer, hashB: Buffer): Buffer {

@@ -1,6 +1,6 @@
 import * as crypto from "crypto";
 import MerkleTree from "merkletreejs";
-import Transaction from "./Transaction";
+import { Transaction } from "./Transaction";
 
 export default class Block {
     // header
@@ -75,10 +75,10 @@ export default class Block {
             timestamp: this.timestamp,
             miner: this.minerAddress,
             transations: this.transactions.map(tx => tx.toJSON()),
-            hash: `0x${this.hash.toString("hex")}`,
-            parentHash: `0x${this.previousHash}`,
-            merkleRoot: `0x${this.merkleRootHash}`,
-            stateRoot: `0x${this.stateRootHash}`,
+            hash: this.hash.toString("hex"),
+            parentHash: this.previousHash,
+            merkleRoot: this.merkleRootHash,
+            stateRoot: this.stateRootHash,
             difficulty: this.difficulty,
             nonce: this.nonce,
         };

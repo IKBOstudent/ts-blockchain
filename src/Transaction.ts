@@ -1,9 +1,24 @@
-import * as crypto from 'crypto';
-import { ec } from 'elliptic';
-import Account from './Account';
-import { globalStateStore } from '.';
+import * as crypto from "crypto";
+import { ec } from "elliptic";
+import { globalStateStore } from ".";
+import { generateAddress } from "./utils";
 
-export default class Transaction {
+export interface TransactionType {
+    sender: string;
+    receiver: string;
+    value: number;
+    fee: number;
+    nonce: number;
+    hash?: string;
+    signature?: string;
+    recoveryParam?: number;
+
+    status?: "PENDING" | "CONFIRMED" | "FAILED";
+    blockIndex?: number;
+    blockHash?: string;
+}
+
+export class Transaction implements TransactionType {
     // input
     public readonly sender: string;
     public readonly receiver: string;
@@ -12,55 +27,61 @@ export default class Transaction {
     public readonly nonce: number;
 
     // transaction hash
-    public hash: Buffer;
+    public hash: string;
+    public signature?: string;
+    public recoveryParam?: number;
 
-    // signature by sender
-    public signature: ec.Signature | null;
+    public status?: "PENDING" | "CONFIRMED" | "FAILED";
+    public blockIndex?: number;
+    public blockHash?: string;
 
-    // additional info
-    public status: 'PENDING' | 'CONFIRMED' | 'FAILED';
-    public blockIndex: number | null;
-    public blockHash: string;
-
-    constructor(
-        senderAddress: string,
-        receiverAddress: string,
-        value: number,
-        fee: number,
-        nonce: number,
-    ) {
-        this.sender = senderAddress;
-        this.receiver = receiverAddress;
+    constructor(tx: TransactionType) {
+        const {
+            sender,
+            receiver,
+            value,
+            fee,
+            nonce,
+            hash,
+            signature,
+            recoveryParam,
+            status = "PENDING",
+            blockIndex,
+            blockHash,
+        } = tx;
+        this.sender = sender;
+        this.receiver = receiver;
         this.value = value;
         this.fee = fee;
         this.nonce = nonce;
-        this.hash = this.generateHash();
-        this.signature = null;
-
-        this.status = 'PENDING';
-        this.blockIndex = null;
-        this.blockHash = '';
+        this.hash = hash || this.generateHash();
+        this.signature = signature;
+        this.recoveryParam = recoveryParam;
+        this.status = status;
+        this.blockIndex = blockIndex;
+        this.blockHash = blockHash;
     }
 
-    generateHash(): Buffer {
+    generateHash(): string {
         return crypto
-            .createHash('sha3-256')
+            .createHash("sha3-256")
             .update(this.sender + this.receiver + this.value + this.fee)
-            .digest();
+            .digest("hex");
     }
 
     verifyTransaction(): boolean {
-        if (this.signature === null || this.signature.recoveryParam === null) {
+        if (this.signature === undefined || this.hash === undefined || this.recoveryParam === undefined) {
+            console.log("can't verify");
             return false;
         }
 
         // recovering publicKey with signature
-        let recoveredPublicKey = new ec('secp256k1')
-            .recoverPubKey(this.hash, this.signature, this.signature.recoveryParam)
-            .encode('hex');
+        let recoveredPublicKey = new ec("secp256k1")
+            .recoverPubKey(Buffer.from(this.hash, "hex"), Buffer.from(this.signature, "hex"), this.recoveryParam)
+            .encode("hex");
 
         // if address of sender === signature publicKey hash => signature is valid
-        return Account.generateAddress(recoveredPublicKey) === this.sender;
+        return generateAddress(recoveredPublicKey) === this.sender;
     }
 
     executeTransaction(blockIndex: number, blockHash: string) {
@@ -71,25 +92,27 @@ export default class Transaction {
         const receiverAccount = globalStateStore.getAccountByAddress(this.receiver);
 
         if (!senderAccount) {
-            this.status = 'FAILED';
-            throw new Error('Sender address invalid');
+            this.status = "FAILED";
+            throw new Error("Sender address invalid");
         }
         if (!receiverAccount) {
-            this.status = 'FAILED';
-            throw new Error('Receiver address invalid');
-        } else if (senderAccount.balance < this.value + this.fee) {
-            this.status = 'FAILED';
-            throw new Error('Sender has insufficient funds');
-        } else if (senderAccount.nonce !== this.nonce) {
-            this.status = 'FAILED';
-            throw new Error('Nonce is invalid');
+            this.status = "FAILED";
+            throw new Error("Receiver address invalid");
+        }
+        if (senderAccount.balance < this.value + this.fee) {
+            this.status = "FAILED";
+            throw new Error("Sender has insufficient funds");
+        }
+        if (senderAccount.nonce !== this.nonce) {
+            this.status = "FAILED";
+            throw new Error("Nonce is invalid");
         }
 
         senderAccount.balance -= this.value + this.fee;
         receiverAccount.balance += this.value;
         senderAccount.nonce++;
 
-        this.status = 'CONFIRMED';
+        this.status = "CONFIRMED";
     }
 
     static executeMiningRewardTransaction(minerAddress: string, reward: number) {
@@ -99,17 +122,21 @@ export default class Transaction {
         }
     }
 
-    toJSON() {
-        return {
-            hash: `0x${this.hash.toString('hex')}`,
-            status: this.status,
-            from: `0x${this.sender}`,
-            to: `0x${this.receiver}`,
-            value: this.value,
-            fee: this.fee,
-            nonce: this.nonce,
-            blockIndex: this.blockIndex,
-            blockHash: `0x${this.blockHash}`,
-        };
+    toJSON(): TransactionType {
+        return JSON.parse(
+            JSON.stringify({
+                sender: this.sender,
+                receiver: this.receiver,
+                value: this.value,
+                fee: this.fee,
+                nonce: this.nonce,
+                hash: this.hash,
+                signature: this.signature,
+                recoveryParam: this.recoveryParam,
+                status: this.status,
+                blockIndex: this.blockIndex,
+                blockHash: this.blockHash,
+            })
+        );
     }
 }

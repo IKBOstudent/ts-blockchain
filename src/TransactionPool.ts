@@ -1,5 +1,5 @@
-import { globalStateStore } from '.';
-import Transaction from './Transaction';
+import { globalStateStore } from ".";
+import { Transaction } from "./Transaction";
 
 export default class TransactionPool {
     public pendingTransactions: Transaction[];
@@ -17,7 +17,7 @@ export default class TransactionPool {
         if (newTransaction.verifyTransaction()) {
             this.pendingTransactions.push(newTransaction);
         } else {
-            throw new Error('Invalid transaction');
+            throw new Error("Invalid transaction");
         }
     }
 
@@ -26,12 +26,10 @@ export default class TransactionPool {
         let totalFee = 0;
 
         for (let i = 0; i < this.pendingTransactions.length; i++) {
-            const enoughMoney = this.pendingTransactions[i].fee + totalFee <= feeLimit;
-            const validNonce =
-                this.pendingTransactions[i].nonce ===
-                globalStateStore.getAccountByAddress(this.pendingTransactions[i].sender).nonce;
+            const feeFull = this.pendingTransactions[i].fee + totalFee > feeLimit;
+            const sender = globalStateStore.getAccountByAddress(this.pendingTransactions[i].sender);
 
-            if (enoughMoney && validNonce) {
+            if (!feeFull && sender && this.pendingTransactions[i].nonce === sender.nonce) {
                 pickedTransactions.push(this.pendingTransactions[i]);
                 totalFee += this.pendingTransactions[i].fee;
             } else {
@@ -41,15 +39,13 @@ export default class TransactionPool {
         return pickedTransactions;
     }
 
-    removeConfirmed(txHashes: Buffer[]): void {
-        this.pendingTransactions = this.pendingTransactions.filter(
-            (tx) => !txHashes.includes(tx.hash),
-        );
+    removeConfirmed(txHashes: string[]): void {
+        this.pendingTransactions = this.pendingTransactions.filter(tx => !txHashes.includes(tx.hash));
     }
 
     toJSON() {
         return {
-            pendingTransactions: this.pendingTransactions.map((tx) => tx.toJSON()),
+            pendingTransactions: this.pendingTransactions.map(tx => tx.toJSON()),
         };
     }
 }

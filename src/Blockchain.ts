@@ -1,8 +1,8 @@
 import { globalStateStore } from ".";
-import Account from "./Account";
 import Block from "./Block";
-import Transaction from "./Transaction";
+import { Transaction, TransactionType } from "./Transaction";
 import TransactionPool from "./TransactionPool";
+import { Account } from "./Account";
 
 const TEMP__DIFFICULTY = 8;
 const BLOCK_FEE_LIMIT = 4;
@@ -40,7 +40,7 @@ export default class Blockchain {
         Transaction.executeMiningRewardTransaction(this.miner.address, totalFees + MINING_REWARD);
     }
 
-    addNewBlock(): void {
+    addNewBlock(): Block {
         const parent = this.getLastBlock();
 
         const newBlock = new Block(
@@ -59,14 +59,16 @@ export default class Blockchain {
 
         this.executeTransactions(newBlock);
         this.transactionPool.removeConfirmed(newBlock.transactions.map(tx => tx.hash));
+
+        return newBlock;
     }
 
     addNewTransaction(newTransaction: Transaction) {
         try {
             this.transactionPool.addPendingTransaction(newTransaction);
-            if (this.transactionPool.getTotalFeePending() >= BLOCK_FEE_LIMIT) {
-                this.addNewBlock();
-            }
+            // if (this.transactionPool.getTotalFeePending() >= BLOCK_FEE_LIMIT) {
+            //     this.addNewBlock();
+            // }
         } catch (e) {
             console.log(`transaction rejected: ${e}`);
         }
