@@ -1,54 +1,57 @@
-import * as crypto from "crypto";
-import { HASH_LEN, Peer } from "./Node";
+import { Peer, HASH_LEN } from './Node';
 
 export default class KademliaTable {
-    nodeID: Buffer;
     bootNode: boolean;
-    size: number;
+
+    nodeID: Buffer;
+    bucketSize: number;
     buckets: Peer[][];
 
-    constructor(nodeID: Buffer, size: number, bootNode = false) {
-        this.nodeID = nodeID;
-        this.size = size;
-        this.buckets = [];
-        this.bootNode = bootNode;
+    constructor(nodeID: string, size: number, bootNode = false) {
+        this.bootNode = bootNode; // boot node stores all nodes
 
-        // nodes are distributed in buckets of distances from 0 to HASH_LEN * 8 - 1
+        this.nodeID = Buffer.from(nodeID, 'hex');
+        this.bucketSize = size;
+        this.buckets = [];
+
+        // nodes are distributed in k-buckets of distances from 0 to HASH_LEN * 8 - 1
         for (let i = 0; i < HASH_LEN * 8; i++) {
             this.buckets.push([]);
         }
     }
 
     addNewNode(peer: Peer): { status: boolean; node?: Peer } {
-        const newNodeID = Buffer.from(peer.hashID, "hex");
+        const newNodeID = Buffer.from(peer.nodeID, 'hex');
 
         const bucketIndex = KademliaTable.getBucketIndex(this.nodeID, newNodeID);
         const bucket = this.buckets[bucketIndex];
-        let status = true;
+
+        let status = false;
         let node: Peer | undefined;
-        if (bucket.length >= this.size && !this.bootNode) {
-            status = false;
+        if (bucket.length >= this.bucketSize && !this.bootNode) {
+            status = true;
             node = bucket.pop();
-            console.log(`bucket full. evicting ${node?.hashID}`.bgMagenta);
+            console.log(`bucket full. evicting ${node?.nodeID}`.bgMagenta);
         }
 
         bucket.push(peer);
 
         bucket.sort((a, b) =>
             Buffer.compare(
-                KademliaTable.getXORdistance(this.nodeID, Buffer.from(a.hashID, "hex")),
-                KademliaTable.getXORdistance(this.nodeID, Buffer.from(b.hashID, "hex"))
-            )
+                KademliaTable.getXORdistance(this.nodeID, Buffer.from(a.nodeID, 'hex')),
+                KademliaTable.getXORdistance(this.nodeID, Buffer.from(b.nodeID, 'hex')),
+            ),
         );
+
         return { status, node };
     }
 
     removeNode(id: string): boolean {
-        const nodeID = Buffer.from(id, "hex");
+        const nodeID = Buffer.from(id, 'hex');
         const bucketIndex = KademliaTable.getBucketIndex(this.nodeID, nodeID);
         const bucket = this.buckets[bucketIndex];
         if (bucket.length !== 0) {
-            const index = bucket.findIndex(peer => peer.hashID === id);
+            const index = bucket.findIndex((peer) => peer.nodeID === id);
             if (index >= 0) {
                 bucket.splice(index, 1);
                 return true;
@@ -58,13 +61,13 @@ export default class KademliaTable {
     }
 
     getClosestNodes(id: string, count: number): Peer[] {
-        const nodeID = Buffer.from(id, "hex");
+        const nodeID = Buffer.from(id, 'hex');
         const nodes: Peer[] = [];
         for (let i = 0; i < HASH_LEN * 8; i++) {
             const bucket = this.buckets[i];
 
-            bucket.forEach(peer => {
-                if (peer.hashID !== id) {
+            bucket.forEach((peer) => {
+                if (peer.nodeID !== id) {
                     nodes.push(peer);
                 }
             });
@@ -73,9 +76,9 @@ export default class KademliaTable {
         return nodes
             .sort((a, b) =>
                 Buffer.compare(
-                    KademliaTable.getXORdistance(nodeID, Buffer.from(a.hashID, "hex")),
-                    KademliaTable.getXORdistance(nodeID, Buffer.from(b.hashID, "hex"))
-                )
+                    KademliaTable.getXORdistance(nodeID, Buffer.from(a.nodeID, 'hex')),
+                    KademliaTable.getXORdistance(nodeID, Buffer.from(b.nodeID, 'hex')),
+                ),
             )
             .slice(0, count);
     }

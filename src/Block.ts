@@ -1,85 +1,129 @@
-import * as crypto from "crypto";
-import MerkleTree from "merkletreejs";
-import { Transaction } from "./Transaction";
+import * as crypto from 'crypto';
+import MerkleTree from 'merkletreejs';
+import { Transaction, TransactionType } from './Transaction';
 
-export default class Block {
+export interface BlockType {
+    index: number;
+    timestamp?: number;
+    previousHash: string;
+    minerAddress: string;
+
+    transactions: TransactionType[];
+    transactionsRootHash?: string;
+    stateRootHash: string;
+
+    difficulty: number;
+    hash?: string;
+    nonce?: number;
+}
+
+export class Block implements BlockType {
     // header
     public readonly index: number;
     public readonly timestamp: number;
     public readonly previousHash: string;
     public readonly minerAddress: string;
 
-    public readonly transactions: Transaction[];
-    public readonly transactionsMerkleTrie: MerkleTree;
-    public readonly merkleRootHash: string;
-
+    public readonly transactions: TransactionType[];
+    public readonly transactionsRootHash: string;
     public readonly stateRootHash: string; // state trie root
 
     // PoW parameters
     public readonly difficulty: number;
+    public hash?: string;
     public nonce: number;
-    public hash: Buffer;
 
-    constructor(
-        minerAddress: string,
-        index: number,
-        previousHash: string,
-        transactions: Transaction[],
-        difficulty: number,
-        stateRootHash: string
-    ) {
-        this.minerAddress = minerAddress;
+    constructor(block: BlockType) {
+        const {
+            index,
+            timestamp,
+            previousHash,
+            minerAddress,
+            transactions,
+            transactionsRootHash,
+            stateRootHash,
+            difficulty,
+            hash,
+            nonce,
+        } = block;
+
         this.index = index;
-        this.timestamp = Date.now();
+        this.timestamp = timestamp || Date.now();
         this.previousHash = previousHash;
+        this.minerAddress = minerAddress;
+
         this.transactions = transactions;
-        this.difficulty = difficulty;
-        this.nonce = 0;
-
-        this.hash = Buffer.from("0".repeat(64), "hex");
-
-        this.transactionsMerkleTrie = new MerkleTree(this.transactions.map(tx => tx.hash));
-        this.merkleRootHash = this.transactionsMerkleTrie.getRoot().toString("hex");
+        if (transactionsRootHash) {
+            this.transactionsRootHash = transactionsRootHash;
+        } else {
+            const transactionsMerkleTrie = new MerkleTree(this.transactions.map((tx) => tx.hash));
+            this.transactionsRootHash = transactionsMerkleTrie.getRoot().toString('hex');
+        }
         this.stateRootHash = stateRootHash;
+
+        this.difficulty = difficulty;
+        this.hash = hash;
+        this.nonce = nonce || 0;
     }
 
     static genesisBlock(): Block {
         // generates the first block in chain
-        return new this("0".repeat(64), 0, "", [], 0, "0".repeat(64));
+        const genesisBlock = {
+            index: 0,
+            previousHash: '',
+            minerAddress: '',
+            transactions: [],
+            transactionsRootHash: '',
+            stateRootHash: '',
+            difficulty: 0,
+            hash: '0'.repeat(64),
+            nonce: 0,
+        };
+        return new this(genesisBlock);
     }
 
     calculateHash(): Buffer {
         return crypto
-            .createHash("sha3-256")
-            .update(this.index + this.timestamp + this.previousHash + this.merkleRootHash + this.nonce)
+            .createHash('sha3-256')
+            .update(
+                this.index +
+                    this.timestamp +
+                    this.previousHash +
+                    this.transactionsRootHash +
+                    this.nonce,
+            )
             .digest();
     }
 
     mineBlock(): void {
         // "000...00xxxxxxx" - PoW: hash starts with N=difficulty zeros;
 
-        this.hash = this.calculateHash();
-        let hashToBin = () => this.hash.reduce((result, byte) => (result += byte.toString(2).padStart(8, "0")), "");
+        let hash = this.calculateHash();
+        let hashToBin = (hash: Buffer) =>
+            hash.reduce((result, byte) => (result += byte.toString(2).padStart(8, '0')), '');
 
-        while (!hashToBin().startsWith("0".repeat(this.difficulty))) {
+        while (!hashToBin(hash).startsWith('0'.repeat(this.difficulty))) {
             this.nonce++;
-            this.hash = this.calculateHash(); // rehash with new nonce
+            hash = this.calculateHash(); // rehash with new nonce
         }
 
-        console.log("Block mined: " + this.hash.toString("hex"));
+        this.hash = hash.toString('hex');
+        console.log('Block mined: ' + this.hash);
     }
 
-    toJSON() {
+    toJSON(): BlockType {
         return {
             index: this.index,
             timestamp: this.timestamp,
-            miner: this.minerAddress,
-            transations: this.transactions.map(tx => tx.toJSON()),
-            hash: this.hash.toString("hex"),
-            parentHash: this.previousHash,
-            merkleRoot: this.merkleRootHash,
-            stateRoot: this.stateRootHash,
+            previousHash: this.previousHash,
+            minerAddress: this.minerAddress,
+
+            transactions: this.transactions,
+            transactionsRootHash: this.transactionsRootHash,
+            stateRootHash: this.stateRootHash,
+
             difficulty: this.difficulty,
+            hash: this.hash,
             nonce: this.nonce,
         };
     }

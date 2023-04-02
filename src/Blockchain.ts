@@ -1,10 +1,10 @@
-import { globalStateStore } from ".";
-import Block from "./Block";
-import { Transaction, TransactionType } from "./Transaction";
-import TransactionPool from "./TransactionPool";
-import { Account } from "./Account";
+import { globalStateStore } from '.';
+import { Block, BlockType } from './Block';
+import { Transaction, TransactionType } from './Transaction';
+import TransactionPool from './TransactionPool';
+import { Account } from './Account';
 
-const TEMP__DIFFICULTY = 8;
+const DIFFICULTY = 8;
 const BLOCK_FEE_LIMIT = 4;
 const MINING_REWARD = 10;
 
@@ -24,33 +24,41 @@ export default class Blockchain {
     }
 
     executeTransactions(minedBlock: Block) {
+        if (!minedBlock.hash) {
+            return console.log('invalid block');
+        }
+
         let totalFees = 0;
-        for (const tx of minedBlock.transactions) {
-            try {
-                tx.executeTransaction(minedBlock.index, minedBlock.hash.toString("hex"));
-                console.log("Executed");
-            } catch (e) {
-                console.log(`Transaction failed: ${e}`);
-            }
+        for (const txForm of minedBlock.transactions) {
+            const tx = new Transaction(txForm);
             console.log(tx.toJSON());
-            // miner receives fee anyway
+            try {
+                tx.executeTransaction(minedBlock.index, minedBlock.hash);
+                console.log('TX executed');
+            } catch (e) {
+                console.log(`TX failed: ${e}`);
+            }
+
             totalFees += tx.fee;
         }
 
         Transaction.executeMiningRewardTransaction(this.miner.address, totalFees + MINING_REWARD);
     }
 
-    addNewBlock(): Block {
+    addNewBlock(): BlockType {
+        if (this.transactionPool.pendingTransactions.length === 0) {
+            throw new Error('Too few txs to start mining');
+        }
         const parent = this.getLastBlock();
 
-        const newBlock = new Block(
-            this.miner.address,
-            parent.index + 1,
-            parent.hash.toString("hex"),
-            this.transactionPool.pickTransactions(BLOCK_FEE_LIMIT),
-            TEMP__DIFFICULTY,
-            globalStateStore.getMerkleRootHash()
-        );
+        const newBlock = new Block({
+            index: parent.index + 1,
+            previousHash: parent.hash || '',
+            minerAddress: this.miner.address,
+            transactions: this.transactionPool.pickTransactions(BLOCK_FEE_LIMIT),
+            stateRootHash: globalStateStore.getMerkleRootHash(),
+            difficulty: DIFFICULTY,
+        } as BlockType);
 
         newBlock.mineBlock();
         this.chain.push(newBlock);
@@ -58,26 +66,23 @@ export default class Blockchain {
         console.log(newBlock.toJSON());
 
         this.executeTransactions(newBlock);
-        this.transactionPool.removeConfirmed(newBlock.transactions.map(tx => tx.hash));
+        this.transactionPool.removeExecuted(newBlock.transactions.map((tx) => tx.hash || ''));
 
-        return newBlock;
+        return newBlock.toJSON();
     }
 
     addNewTransaction(newTransaction: Transaction) {
         try {
             this.transactionPool.addPendingTransaction(newTransaction);
-            // if (this.transactionPool.getTotalFeePending() >= BLOCK_FEE_LIMIT) {
-            //     this.addNewBlock();
-            // }
         } catch (e) {
-            console.log(`transaction rejected: ${e}`);
+            console.log(`TX rejected: ${e}`);
         }
     }
 
     toJSON() {
         return {
-            blockchain: this.chain.map(block => block.toJSON()),
-            pendingTransactions: this.transactionPool.pendingTransactions.map(tx => tx.toJSON()),
+            blockchain: this.chain.map((block) => block.toJSON()),
+            pendingTransactions: this.transactionPool.pendingTransactions.map((tx) => tx.toJSON()),
         };
     }
 }

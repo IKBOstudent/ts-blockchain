@@ -1,5 +1,5 @@
-import { globalStateStore } from ".";
-import { Transaction } from "./Transaction";
+import { globalStateStore } from '.';
+import { Transaction } from './Transaction';
 
 export default class TransactionPool {
     public pendingTransactions: Transaction[];
@@ -17,7 +17,7 @@ export default class TransactionPool {
         if (newTransaction.verifyTransaction()) {
             this.pendingTransactions.push(newTransaction);
         } else {
-            throw new Error("Invalid transaction");
+            throw new Error('Invalid transaction');
         }
     }
 
@@ -39,13 +39,15 @@ export default class TransactionPool {
         return pickedTransactions;
     }
 
-    removeConfirmed(txHashes: string[]): void {
-        this.pendingTransactions = this.pendingTransactions.filter(tx => !txHashes.includes(tx.hash));
+    removeExecuted(txHashes: string[]): void {
+        this.pendingTransactions = this.pendingTransactions.filter(
+            (tx) => !txHashes.includes(tx.hash),
+        );
     }
 
     toJSON() {
         return {
-            pendingTransactions: this.pendingTransactions.map(tx => tx.toJSON()),
+            pendingTransactions: this.pendingTransactions.map((tx) => tx.toJSON()),
         };
     }
 }
