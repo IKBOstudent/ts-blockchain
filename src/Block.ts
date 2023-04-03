@@ -1,6 +1,6 @@
-import * as crypto from 'crypto';
-import MerkleTree from 'merkletreejs';
-import { Transaction, TransactionType } from './Transaction';
+import * as crypto from "crypto";
+import MerkleTree from "merkletreejs";
+import { Transaction, TransactionType } from "./Transaction";
 
 export interface BlockType {
     index: number;
@@ -8,7 +8,7 @@ export interface BlockType {
     previousHash: string;
     minerAddress: string;
 
-    transactions: TransactionType[];
+    transactions: Transaction[];
     transactionsRootHash?: string;
     stateRootHash: string;
 
@@ -24,7 +24,7 @@ export class Block implements BlockType {
     public readonly previousHash: string;
     public readonly minerAddress: string;
 
-    public readonly transactions: TransactionType[];
+    public readonly transactions: Transaction[];
     public readonly transactionsRootHash: string;
     public readonly stateRootHash: string; // state trie root
 
@@ -56,8 +56,8 @@ export class Block implements BlockType {
         if (transactionsRootHash) {
             this.transactionsRootHash = transactionsRootHash;
         } else {
-            const transactionsMerkleTrie = new MerkleTree(this.transactions.map((tx) => tx.hash));
-            this.transactionsRootHash = transactionsMerkleTrie.getRoot().toString('hex');
+            const transactionsMerkleTrie = new MerkleTree(this.transactions.map(tx => tx.hash));
+            this.transactionsRootHash = transactionsMerkleTrie.getRoot().toString("hex");
         }
         this.stateRootHash = stateRootHash;
 
@@ -66,49 +66,43 @@ export class Block implements BlockType {
         this.nonce = nonce || 0;
     }
 
-    static genesisBlock(): Block {
+    static genesisBlock(miner: string): Block {
         // generates the first block in chain
         const genesisBlock = {
             index: 0,
-            previousHash: '',
-            minerAddress: '',
+            previousHash: "",
+            minerAddress: miner,
             transactions: [],
-            transactionsRootHash: '',
-            stateRootHash: '',
+            transactionsRootHash: "",
+            stateRootHash: "",
             difficulty: 0,
-            hash: '0'.repeat(64),
+            hash: "0".repeat(64),
             nonce: 0,
         };
         return new this(genesisBlock);
     }
 
-    calculateHash(): Buffer {
+    static calculateHash(block: BlockType): Buffer {
         return crypto
-            .createHash('sha3-256')
+            .createHash("sha3-256")
             .update(
-                this.index +
-                    this.timestamp +
-                    this.previousHash +
-                    this.transactionsRootHash +
-                    this.nonce,
+                block.index + (block.timestamp || 0) + block.previousHash + block.transactionsRootHash + block.nonce
             )
             .digest();
     }
 
     mineBlock(): void {
-        // "000...00xxxxxxx" - PoW: hash starts with N=difficulty zeros;
+        // "000...00xxxxxxx" - PoW: hash starts with N=difficulty zeros in hex form
 
-        let hash = this.calculateHash();
-        let hashToBin = (hash: Buffer) =>
-            hash.reduce((result, byte) => (result += byte.toString(2).padStart(8, '0')), '');
+        let hash = Block.calculateHash(this).toString("hex");
 
-        while (!hashToBin(hash).startsWith('0'.repeat(this.difficulty))) {
+        while (!hash.startsWith("0".repeat(this.difficulty))) {
             this.nonce++;
-            hash = this.calculateHash(); // rehash with new nonce
+            hash = Block.calculateHash(this).toString("hex"); // rehash with new nonce
         }
 
-        this.hash = hash.toString('hex');
-        console.log('Block mined: ' + this.hash);
+        this.hash = hash;
+        console.log("Block mined: " + this.hash);
     }
 
     toJSON(): BlockType {

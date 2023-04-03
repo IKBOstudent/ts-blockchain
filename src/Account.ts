@@ -23,6 +23,10 @@ export class Account implements AccountType {
     }
 
     initiateTransaction(receiver: string, value: number, nonce: number, privateKey: string): Transaction {
+        if (this.address === receiver) {
+            throw new Error("tx to yourself is invalid!");
+        }
+
         const transaction = new Transaction({
             sender: this.address,
             receiver,

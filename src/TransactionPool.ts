@@ -1,5 +1,5 @@
-import { globalStateStore } from '.';
-import { Transaction } from './Transaction';
+import { globalStateStore } from ".";
+import { Transaction, TransactionType } from "./Transaction";
 
 export default class TransactionPool {
     public pendingTransactions: Transaction[];
@@ -12,12 +12,13 @@ export default class TransactionPool {
         return this.pendingTransactions.reduce((result, tx) => (result += tx.fee), 0);
     }
 
-    addPendingTransaction(newTransaction: Transaction) {
+    addPendingTransaction(newTx: Transaction) {
         // only valid transactions included
-        if (newTransaction.verifyTransaction()) {
-            this.pendingTransactions.push(newTransaction);
+        const senderAccount = globalStateStore.getAccountByAddress(newTx.sender);
+        if (Transaction.verifyTransaction(newTx) && senderAccount && newTx.nonce === senderAccount.nonce) {
+            this.pendingTransactions.push(newTx);
         } else {
-            throw new Error('Invalid transaction');
+            throw new Error("Invalid transaction");
         }
     }
 
@@ -26,10 +27,7 @@ export default class TransactionPool {
         let totalFee = 0;
 
         for (let i = 0; i < this.pendingTransactions.length; i++) {
-            const feeFull = this.pendingTransactions[i].fee + totalFee > feeLimit;
-            const sender = globalStateStore.getAccountByAddress(this.pendingTransactions[i].sender);
-
-            if (!feeFull && sender && this.pendingTransactions[i].nonce === sender.nonce) {
+            if (this.pendingTransactions[i].fee + totalFee <= feeLimit) {
                 pickedTransactions.push(this.pendingTransactions[i]);
                 totalFee += this.pendingTransactions[i].fee;
             } else {
@@ -40,14 +38,10 @@ export default class TransactionPool {
     }
 
     removeExecuted(txHashes: string[]): void {
-        this.pendingTransactions = this.pendingTransactions.filter(
-            (tx) => !txHashes.includes(tx.hash),
-        );
+        this.pendingTransactions = this.pendingTransactions.filter(tx => !txHashes.includes(tx.hash));
     }
 
-    toJSON() {
-        return {
-            pendingTransactions: this.pendingTransactions.map((tx) => tx.toJSON()),
-        };
+    toJSON(): TransactionType[] {
+        return this.pendingTransactions;
     }
 }

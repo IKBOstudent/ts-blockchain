@@ -31,24 +31,13 @@ export class Transaction implements TransactionType {
     public signature?: string;
     public recoveryParam?: number;
 
-    public status?: "PENDING" | "CONFIRMED" | "FAILED";
+    public status: "PENDING" | "CONFIRMED" | "FAILED";
     public blockIndex?: number;
     public blockHash?: string;
 
     constructor(tx: TransactionType) {
-        const {
-            sender,
-            receiver,
-            value,
-            fee,
-            nonce,
-            hash,
-            signature,
-            recoveryParam,
-            status = "PENDING",
-            blockIndex,
-            blockHash,
-        } = tx;
+        const { sender, receiver, value, fee, nonce, hash, signature, recoveryParam, status, blockIndex, blockHash } =
+            tx;
         this.sender = sender;
         this.receiver = receiver;
         this.value = value;
@@ -57,7 +46,7 @@ export class Transaction implements TransactionType {
         this.hash = hash || this.generateHash();
         this.signature = signature;
         this.recoveryParam = recoveryParam;
-        this.status = status;
+        this.status = status || "PENDING";
         this.blockIndex = blockIndex;
         this.blockHash = blockHash;
     }
@@ -69,19 +58,19 @@ export class Transaction implements TransactionType {
             .digest("hex");
     }
 
-    verifyTransaction(): boolean {
-        if (this.signature === undefined || this.hash === undefined || this.recoveryParam === undefined) {
+    static verifyTransaction(tx: TransactionType): boolean {
+        if (tx.signature === undefined || tx.hash === undefined || tx.recoveryParam === undefined) {
             console.log("can't verify");
             return false;
         }
 
         // recovering publicKey with signature
         let recoveredPublicKey = new ec("secp256k1")
-            .recoverPubKey(Buffer.from(this.hash, "hex"), Buffer.from(this.signature, "hex"), this.recoveryParam)
+            .recoverPubKey(Buffer.from(tx.hash, "hex"), Buffer.from(tx.signature, "hex"), tx.recoveryParam)
             .encode("hex");
 
         // if address of sender === signature publicKey hash => signature is valid
-        return generateAddress(recoveredPublicKey) === this.sender;
+        return generateAddress(recoveredPublicKey) === tx.sender;
     }
 
     executeTransaction(blockIndex: number, blockHash: string) {
