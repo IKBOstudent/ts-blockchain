@@ -1,13 +1,13 @@
-import { Transaction } from "./Transaction";
-import { signTransaction } from "./utils";
+import { Transaction } from './Transaction';
+import { signTransaction } from './utils';
 
 const TEMP__INITIAL_BALANCE = 100;
 const TEMP__TRANSACTION_FEE = 1;
 
 export interface AccountType {
     address: string;
-    balance?: number;
-    nonce?: number;
+    balance: number;
+    nonce: number;
 }
 
 export class Account implements AccountType {
@@ -15,16 +15,28 @@ export class Account implements AccountType {
     public balance: number;
     public nonce: number; // amount of transactions confirmed
 
-    constructor(account: AccountType) {
-        const { address, balance = 100, nonce = 0 } = account;
+    constructor({
+        address,
+        balance,
+        nonce,
+    }: {
+        address: string;
+        balance?: number;
+        nonce?: number;
+    }) {
         this.address = address;
-        this.balance = balance;
-        this.nonce = nonce;
+        this.balance = balance || TEMP__INITIAL_BALANCE;
+        this.nonce = nonce || 0;
     }
 
-    initiateTransaction(receiver: string, value: number, nonce: number, privateKey: string): Transaction {
+    initiateTransaction(
+        receiver: string,
+        value: number,
+        nonce: number,
+        privateKey: string,
+    ): Transaction {
         if (this.address === receiver) {
-            throw new Error("tx to yourself is invalid!");
+            throw new Error('tx to yourself is invalid!');
         }
 
         const transaction = new Transaction({

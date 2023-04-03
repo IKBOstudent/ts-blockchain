@@ -1,7 +1,7 @@
-import * as crypto from "crypto";
-import { ec } from "elliptic";
-import { globalStateStore } from ".";
-import { generateAddress } from "./utils";
+import * as crypto from 'crypto';
+import { ec } from 'elliptic';
+import { globalStateStore } from '.';
+import { generateAddress } from './utils';
 
 export interface TransactionType {
     sender: string;
@@ -9,16 +9,16 @@ export interface TransactionType {
     value: number;
     fee: number;
     nonce: number;
-    hash?: string;
+    hash: string;
     signature?: string;
     recoveryParam?: number;
 
-    status?: "PENDING" | "CONFIRMED" | "FAILED";
+    status: 'PENDING' | 'CONFIRMED' | 'FAILED';
     blockIndex?: number;
     blockHash?: string;
 }
 
-export class Transaction implements TransactionType {
+export class Transaction {
     // input
     public readonly sender: string;
     public readonly receiver: string;
@@ -31,13 +31,35 @@ export class Transaction implements TransactionType {
     public signature?: string;
     public recoveryParam?: number;
 
-    public status: "PENDING" | "CONFIRMED" | "FAILED";
+    public status: 'PENDING' | 'CONFIRMED' | 'FAILED';
     public blockIndex?: number;
     public blockHash?: string;
 
-    constructor(tx: TransactionType) {
-        const { sender, receiver, value, fee, nonce, hash, signature, recoveryParam, status, blockIndex, blockHash } =
-            tx;
+    constructor({
+        sender,
+        receiver,
+        value,
+        fee,
+        nonce,
+        hash,
+        signature,
+        recoveryParam,
+        status,
+        blockIndex,
+        blockHash,
+    }: {
+        sender: string;
+        receiver: string;
+        value: number;
+        fee: number;
+        nonce: number;
+        hash?: string;
+        signature?: string;
+        recoveryParam?: number;
+        status?: 'PENDING' | 'CONFIRMED' | 'FAILED';
+        blockIndex?: number;
+        blockHash?: string;
+    }) {
         this.sender = sender;
         this.receiver = receiver;
         this.value = value;
@@ -46,28 +68,32 @@ export class Transaction implements TransactionType {
         this.hash = hash || this.generateHash();
         this.signature = signature;
         this.recoveryParam = recoveryParam;
-        this.status = status || "PENDING";
+        this.status = status || 'PENDING';
         this.blockIndex = blockIndex;
         this.blockHash = blockHash;
     }
 
     generateHash(): string {
         return crypto
-            .createHash("sha3-256")
+            .createHash('sha3-256')
             .update(this.sender + this.receiver + this.value + this.fee)
-            .digest("hex");
+            .digest('hex');
     }
 
-    static verifyTransaction(tx: TransactionType): boolean {
-        if (tx.signature === undefined || tx.hash === undefined || tx.recoveryParam === undefined) {
+    static verifyTransaction(tx: Transaction): boolean {
+        if (tx.signature === undefined || tx.recoveryParam === undefined) {
             console.log("can't verify");
             return false;
         }
 
         // recovering publicKey with signature
-        let recoveredPublicKey = new ec("secp256k1")
-            .recoverPubKey(Buffer.from(tx.hash, "hex"), Buffer.from(tx.signature, "hex"), tx.recoveryParam)
-            .encode("hex");
+        let recoveredPublicKey = new ec('secp256k1')
+            .recoverPubKey(
+                Buffer.from(tx.hash, 'hex'),
+                Buffer.from(tx.signature, 'hex'),
+                tx.recoveryParam,
+            )
+            .encode('hex');
 
         // if address of sender === signature publicKey hash => signature is valid
         return generateAddress(recoveredPublicKey) === tx.sender;
@@ -81,27 +107,27 @@ export class Transaction implements TransactionType {
         const receiverAccount = globalStateStore.getAccountByAddress(this.receiver);
 
         if (!senderAccount) {
-            this.status = "FAILED";
-            throw new Error("Sender address invalid");
+            this.status = 'FAILED';
+            throw new Error('Sender address invalid');
         }
         if (!receiverAccount) {
-            this.status = "FAILED";
-            throw new Error("Receiver address invalid");
+            this.status = 'FAILED';
+            throw new Error('Receiver address invalid');
         }
         if (senderAccount.balance < this.value + this.fee) {
-            this.status = "FAILED";
-            throw new Error("Sender has insufficient funds");
+            this.status = 'FAILED';
+            throw new Error('Sender has insufficient funds');
         }
         if (senderAccount.nonce !== this.nonce) {
-            this.status = "FAILED";
-            throw new Error("Nonce is invalid");
+            this.status = 'FAILED';
+            throw new Error('Nonce is invalid');
         }
 
         senderAccount.balance -= this.value + this.fee;
         receiverAccount.balance += this.value;
         senderAccount.nonce++;
 
-        this.status = "CONFIRMED";
+        this.status = 'CONFIRMED';
     }
 
     static executeMiningRewardTransaction(minerAddress: string, reward: number) {
@@ -113,19 +139,22 @@ export class Transaction implements TransactionType {
 
     toJSON(): TransactionType {
         return JSON.parse(
-            JSON.stringify({
-                sender: this.sender,
-                receiver: this.receiver,
-                value: this.value,
-                fee: this.fee,
-                nonce: this.nonce,
-                hash: this.hash,
-                signature: this.signature,
-                recoveryParam: this.recoveryParam,
-                status: this.status,
-                blockIndex: this.blockIndex,
-                blockHash: this.blockHash,
-            })
+            JSON.stringify(
+                {
+                    sender: this.sender,
+                    receiver: this.receiver,
+                    value: this.value,
+                    fee: this.fee,
+                    nonce: this.nonce,
+                    hash: this.hash,
+                    signature: this.signature,
+                    recoveryParam: this.recoveryParam,
+                    status: this.status,
+                    blockIndex: this.blockIndex,
+                    blockHash: this.blockHash,
+                },
+                (_, val) => val,
+            ),
         );
     }
 }

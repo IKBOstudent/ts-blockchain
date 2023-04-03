@@ -1,37 +1,37 @@
-import * as net from "net";
-import * as crypto from "crypto";
-import { globalStateStore } from ".";
-import { Account, AccountType } from "./Account";
-import Blockchain from "./Blockchain";
-import KademliaTable from "./KademliaTable";
-import { generateAddress, generatePublicPrivateKeys } from "./utils";
-import { Transaction, TransactionType } from "./Transaction";
-import { Block, BlockType } from "./Block";
-import StateStore from "./StateStore";
+import * as net from 'net';
+import * as crypto from 'crypto';
+import { globalStateStore } from '.';
+import { Account, AccountType } from './Account';
+import Blockchain from './Blockchain';
+import KademliaTable from './KademliaTable';
+import { generateAddress, generatePublicPrivateKeys } from './utils';
+import { Transaction, TransactionType } from './Transaction';
+import { Block, BlockType } from './Block';
+import StateStore from './StateStore';
 
-const LOCALHOST = "127.0.0.1";
+const LOCALHOST = '127.0.0.1';
 const BOOT_NODE_PORT = 3001;
 const BUCKET_SIZE = 4;
 
 export const HASH_LEN = 8;
 
 enum MESSAGE_TYPE {
-    HANDSHAKE = "HANDSHAKE",
-    RESPONSE_BOOT_INFO = "RESPONSE_BOOT_INFO",
+    HANDSHAKE = 'HANDSHAKE',
+    RESPONSE_BOOT_INFO = 'RESPONSE_BOOT_INFO',
 }
 
 enum SUBSCRIPTION_TYPE {
-    SUB_PING = "SUB_PING",
-    SUB_NEW_ACCOUNT = "SUB_NEW_ACCOUNT",
-    SUB_NEW_BLOCK = "SUB_NEW_BLOCK",
-    SUB_TRANSACTION = "SUB_TRANSACTION",
+    SUB_PING = 'SUB_PING',
+    SUB_NEW_ACCOUNT = 'SUB_NEW_ACCOUNT',
+    SUB_NEW_BLOCK = 'SUB_NEW_BLOCK',
+    SUB_TRANSACTION = 'SUB_TRANSACTION',
 }
 
 export enum PUBLICATION_TYPE {
-    PUB_PING = "PUB_PING",
-    PUB_NEW_ACCOUNT = "PUB_NEW_ACCOUNT",
-    PUB_NEW_BLOCK = "PUB_NEW_BLOCK",
-    PUB_TRANSACTION = "PUB_TRANSACTION",
+    PUB_PING = 'PUB_PING',
+    PUB_NEW_ACCOUNT = 'PUB_NEW_ACCOUNT',
+    PUB_NEW_BLOCK = 'PUB_NEW_BLOCK',
+    PUB_TRANSACTION = 'PUB_TRANSACTION',
 }
 
 class Subscription {
@@ -98,14 +98,14 @@ export default class Node {
     constructor(port: number) {
         this.port = port;
         this.server = net.createServer();
-        this.nodeID = crypto.randomBytes(HASH_LEN).toString("hex");
+        this.nodeID = crypto.randomBytes(HASH_LEN).toString('hex');
 
         this.DHT = new KademliaTable(this.nodeID, BUCKET_SIZE, this.port === BOOT_NODE_PORT);
 
         this.peers = new Map();
         this.subscriptions = new Map();
 
-        Object.values(SUBSCRIPTION_TYPE).forEach(type => {
+        Object.values(SUBSCRIPTION_TYPE).forEach((type) => {
             // every node is subscribed for all types of publications
             this.subscriptions.set(type, new Subscription());
         });
@@ -114,11 +114,14 @@ export default class Node {
     }
 
     initServer(): void {
-        this.server.on("connection", socket => {
-            console.log(`[node ${this.port} | server] established connection with port=${socket.remotePort}`.yellow);
+        this.server.on('connection', (socket) => {
+            console.log(
+                `[node ${this.port} | server] established connection with port=${socket.remotePort}`
+                    .yellow,
+            );
 
             if (socket.remotePort) {
-                this.handleConnection("server", socket);
+                this.handleConnection('server', socket);
             } else {
                 console.log(`[node ${this.port} | server] connection invalid`.black.bgRed);
             }
@@ -132,26 +135,23 @@ export default class Node {
 
     joinNetwork(): void {
         if (this.port !== BOOT_NODE_PORT) {
-            console.log(`connecting to BOOT node in ${(this.port % 100) * 1000}ms`.dim);
+            const timeout = (this.port % 100) * 1000;
+
+            console.log(`connecting to BOOT node in ${timeout}ms`.dim);
             setTimeout(() => {
                 this.connectToBOOTNode();
-            }, (this.port % 100) * 1000);
-        }
-    }
-
-    findPeerBySocket(socket: net.Socket): Peer | undefined {
-        for (let value of this.peers.values()) {
-            if (value.socket === socket) {
-                return value.peer;
-            }
+            }, timeout);
         }
     }
 
     connectToBOOTNode(): void {
         const socket = net.createConnection({ port: BOOT_NODE_PORT });
 
-        socket.on("connect", () => {
-            console.log(`[node ${this.port} | client] established connection with port=${BOOT_NODE_PORT}`.yellow);
+        socket.on('connect', () => {
+            console.log(
+                `[node ${this.port} | client] established connection with port=${BOOT_NODE_PORT}`
+                    .yellow,
+            );
 
             const message = {
                 content: {
@@ -161,10 +161,10 @@ export default class Node {
             };
 
             this.sendData(socket, MESSAGE_TYPE.HANDSHAKE, message);
-            this.handleConnection("client", socket);
+            this.handleConnection('client', socket);
         });
 
-        socket.on("error", err => {
+        socket.on('error', (err) => {
             console.log(`[node ${this.port} | client] BOOT node unavaliable ${err.name}`.red);
         });
     }
@@ -172,7 +172,9 @@ export default class Node {
     connectToClosestNode(peer: Peer): void {
         console.log(`Trying to connect to port=${peer.port}...`);
         const socket = net.createConnection({ port: peer.port }, () => {
-            console.log(`[node ${this.port} | client] established connection with port=${peer.port}`.yellow);
+            console.log(
+                `[node ${this.port} | client] established connection with port=${peer.port}`.yellow,
+            );
 
             const message = {
                 content: {
@@ -183,37 +185,41 @@ export default class Node {
 
             this.peers.set(peer.nodeID, { socket, peer });
 
-            this.sendData(socket, MESSAGE_TYPE.HANDSHAKE, message);
-            this.handleConnection("client", socket, peer);
+            this.sendData(socket, MESSAGE_TYPE.HANDSHAKE, message, peer);
+            this.handleConnection('client', socket, peer);
         });
     }
 
-    handleConnection(type: "client" | "server", socket: net.Socket, peer?: Peer): void {
-        socket.on("data", response => {
+    handleConnection(type: 'client' | 'server', socket: net.Socket, peer?: Peer): void {
+        socket.on('data', (response) => {
             console.log(
                 `[node ${this.port} | ${type}] received message from ${
                     peer ? `port=${peer.port}` : `UNKNOWN port=${socket.remotePort}`
-                }`.cyan
+                }`.cyan,
             );
 
-            let data: { type: MESSAGE_TYPE | PUBLICATION_TYPE; message: string } = JSON.parse(response.toString());
+            let data: { type: MESSAGE_TYPE | PUBLICATION_TYPE; message: string } = JSON.parse(
+                response.toString(),
+            );
 
-            console.log("           | received type:", data.type);
+            console.log('           | received type:', data.type);
 
             const msg: { hash: string; content: any } = JSON.parse(data.message);
 
             switch (data.type) {
                 case MESSAGE_TYPE.HANDSHAKE: {
                     const newPeer: Peer = msg.content;
-                    process.stdout.write(`adding new peer: ${newPeer.nodeID} | port=${newPeer.port}... `);
+                    process.stdout.write(
+                        `adding new peer: ${newPeer.nodeID} | port=${newPeer.port}... `,
+                    );
 
                     if (newPeer.nodeID === this.nodeID) {
-                        return console.log("ID belongs to me".red);
+                        return console.log('ID belongs to me'.red);
                     }
 
                     this.peers.set(newPeer.nodeID, { socket, peer: newPeer });
                     const evicted = this.DHT.addNewNode(newPeer);
-                    console.log("added".green);
+                    console.log('added'.green);
 
                     if (evicted.status && evicted.node) {
                         process.stdout.write(`disconnecting with port=${evicted.node.port}... `);
@@ -221,20 +227,25 @@ export default class Node {
                         if (item) {
                             item.socket.destroy();
                             this.peers.delete(evicted.node.nodeID);
-                            console.log("disconnected".green);
-                        } else console.log("failed to disconnect".red);
+                            console.log('disconnected'.green);
+                        } else console.log('failed to disconnect'.red);
                     }
 
                     // if new node sent handshake
                     if (this.port === BOOT_NODE_PORT) {
-                        console.log("sending boot info...");
+                        console.log('sending boot info...');
                         const content = {
                             nodes: this.DHT.getClosestNodes(newPeer.nodeID, BUCKET_SIZE),
                             state: globalStateStore.toJSON(),
                             blockchain: this.info.blockchain.toJSON(),
                         };
 
-                        this.sendData(socket, MESSAGE_TYPE.RESPONSE_BOOT_INFO, { content });
+                        this.sendData(
+                            socket,
+                            MESSAGE_TYPE.RESPONSE_BOOT_INFO,
+                            { content },
+                            newPeer,
+                        );
                     } else {
                         //
                     }
@@ -245,26 +256,39 @@ export default class Node {
                     console.log(msg.content);
                     this.bootSocket = socket;
 
-                    const content: { nodes: Peer[]; state: AccountType[]; blockchain: BlockType[] } = msg.content;
-                    console.log("updating global store...");
-                    globalStateStore.syncStore(content.state as AccountType[]);
-                    console.log("updating blockchain...");
-                    this.info.blockchain.syncBlockchain(content.blockchain as BlockType[]);
+                    const content: {
+                        nodes: Peer[];
+                        state: AccountType[];
+                        blockchain: BlockType[];
+                    } = msg.content;
+                    console.log('updating global store...');
+                    globalStateStore.syncStore(content.state);
+                    console.log('updating blockchain...');
+                    this.info.blockchain.syncBlockchain(content.blockchain);
 
                     console.log(`connecting to discovered ${content.nodes.length} nodes...`);
                     if (content.nodes.length > BUCKET_SIZE) {
-                        return console.log("invalid nodes".red);
+                        return console.log('invalid nodes'.red);
                     }
 
-                    content.nodes.forEach(peer => {
+                    content.nodes.forEach((peer) => {
                         this.DHT.addNewNode(peer); // can't return evicted here
                         this.connectToClosestNode(peer);
                     });
 
-                    console.log("nodes added".green);
+                    console.log('nodes added'.green);
 
                     // publishing new account
-                    setTimeout(() => this.publish(PUBLICATION_TYPE.PUB_NEW_ACCOUNT, this.info.account.toJSON()), 2000);
+
+                    setTimeout(
+                        () =>
+                            this.publish(
+                                PUBLICATION_TYPE.PUB_NEW_ACCOUNT,
+                                this.info.account.toJSON(),
+                            ),
+                        2000,
+                    );
+
                     break;
                 }
 
@@ -279,32 +303,59 @@ export default class Node {
                         return console.log(`already received this ${data.type}`.dim);
                     }
                     sub?.addHash(msg.hash);
-                    const content = msg.content;
-                    console.log(content);
+
+                    // working with data
 
                     switch (data.type) {
-                        case PUBLICATION_TYPE.PUB_NEW_ACCOUNT:
-                            const newAccount = new Account(content as AccountType);
-                            globalStateStore.addAccount(newAccount);
-                            break;
+                        case PUBLICATION_TYPE.PUB_NEW_ACCOUNT: {
+                            try {
+                                const content: AccountType = msg.content;
+                                console.log(content);
+                                const newAccount = new Account(content);
+                                globalStateStore.addAccount(newAccount);
+                            } catch (e) {
+                                console.log(`Received some trash: ${e}`);
+                            }
 
-                        case PUBLICATION_TYPE.PUB_TRANSACTION:
-                            const tx = new Transaction(content as TransactionType);
-                            console.log(Transaction.verifyTransaction(tx) ? "VALID TX".green : "INVALID TX".red);
-                            this.info.blockchain.addNewTransaction(tx);
                             break;
+                        }
 
-                        case PUBLICATION_TYPE.PUB_NEW_BLOCK:
-                            console.log("received new block.... TBD");
-                            const block = new Block(content as BlockType);
-                            this.info.blockchain.addReceivedBlock(block);
+                        case PUBLICATION_TYPE.PUB_TRANSACTION: {
+                            try {
+                                const content: TransactionType = msg.content;
+                                console.log(content);
+                                const tx = new Transaction(content);
+                                console.log(
+                                    Transaction.verifyTransaction(tx)
+                                        ? 'VALID TX'.green
+                                        : 'INVALID TX'.red,
+                                );
+                                this.info.blockchain.addNewTransaction(tx);
+                            } catch (e) {
+                                console.log(`Received some trash: ${e}`);
+                            }
                             break;
+                        }
+
+                        case PUBLICATION_TYPE.PUB_NEW_BLOCK: {
+                            try {
+                                const content: BlockType = msg.content;
+                                console.log(content);
+                                const block = new Block(content);
+                                this.info.blockchain.addReceivedBlock(block);
+                            } catch (e) {
+                                console.log(`Received some trash: ${e}`);
+                            }
+                            break;
+                        }
                     }
 
                     // propagate further
-                    for (const val of this.peers.values()) {
-                        if (val.socket !== socket) {
-                            this.sendData(val.socket, data.type, msg);
+                    if (this.port !== BOOT_NODE_PORT) {
+                        for (const val of this.peers.values()) {
+                            if (val.socket !== socket) {
+                                this.sendData(val.socket, data.type, msg, peer);
+                            }
                         }
                     }
 
@@ -312,26 +363,35 @@ export default class Node {
                 }
 
                 default:
-                    console.warn("Invalid message type");
+                    console.warn('Invalid message type');
             }
         });
 
-        socket.on("error", err => {
-            console.log(`[node ${this.port} | ${type}] connection failed ${err.name}: ${err.message}`.red);
+        socket.on('error', (err) => {
+            console.log(
+                `[node ${this.port} | ${type}] connection failed ${err.name}: ${err.message}`.red,
+            );
         });
 
-        socket.on("close", () => {
+        socket.on('close', () => {
             if (peer) {
                 process.stdout.write(`removing ${peer.nodeID} on port=${peer.port}... `);
-                console.log(this.DHT.removeNode(peer.nodeID) ? "removed".green : "not removed".red);
+                console.log(this.DHT.removeNode(peer.nodeID) ? 'removed'.green : 'not removed'.red);
                 this.peers.delete(peer.nodeID);
             }
 
-            console.log(`[node ${this.port} | ${type}] connection closed with port=${socket.remotePort}`);
+            console.log(
+                `[node ${this.port} | ${type}] connection closed with port=${socket.remotePort}`,
+            );
         });
     }
 
-    sendData(socket: net.Socket, type: MESSAGE_TYPE | PUBLICATION_TYPE, message: { hash?: string; content: any }) {
+    sendData(
+        socket: net.Socket,
+        type: MESSAGE_TYPE | PUBLICATION_TYPE,
+        message: { hash?: string; content: any },
+        peer?: Peer,
+    ) {
         let data = {
             type: type,
             message: JSON.stringify(message),
@@ -339,17 +399,18 @@ export default class Node {
 
         socket.write(JSON.stringify(data));
 
-        const peer = this.findPeerBySocket(socket);
         console.log(
             `[node ${this.port} | client] sent ${type} to ${
-                peer ? `port=${peer.port}` : `UNKNOWN port=${socket.remotePort}`
-            }`.black.bgCyan
+                peer
+                    ? `port=${peer.port}`
+                    : `${socket !== this.bootSocket ? 'UNKNOWN ' : ''}port=${socket.remotePort}`
+            }`.black.bgCyan,
         );
     }
 
     publish(type: PUBLICATION_TYPE, content: any) {
         const data = {
-            hash: crypto.randomBytes(8).toString("hex"),
+            hash: crypto.randomBytes(8).toString('hex'),
             content,
         };
 
@@ -360,14 +421,14 @@ export default class Node {
 
         this.bootSocket && this.sendData(this.bootSocket, type, data);
         for (const val of this.peers.values()) {
-            this.sendData(val.socket, type, data);
+            this.sendData(val.socket, type, data, val.peer);
         }
     }
 
     makeTransaction(to: string, amount: string) {
         try {
             if (to.length !== 40) {
-                throw new Error("invalid receiver address");
+                throw new Error('invalid receiver address');
             }
             const tx = this.info.initiateTransaction(to, parseInt(amount));
             this.publish(PUBLICATION_TYPE.PUB_TRANSACTION, tx);
@@ -378,7 +439,7 @@ export default class Node {
 
     mineBlock() {
         try {
-            const newBlock: BlockType = this.info.blockchain.addNewBlock();
+            const newBlock = this.info.blockchain.addNewBlock();
             this.publish(PUBLICATION_TYPE.PUB_NEW_BLOCK, newBlock);
         } catch (e) {
             console.log(`Mining rejected: ${e}`);
@@ -386,24 +447,30 @@ export default class Node {
     }
 
     printPool() {
-        console.log(this.info.blockchain.transactionPool.toJSON());
+        console.log('pending:', this.info.blockchain.transactionPool.toJSON());
     }
 
     printChain() {
-        console.log(JSON.stringify(this.info.blockchain.toJSON(), null, 4));
+        console.log(JSON.stringify(this.info.blockchain.toJSON(), null, 2));
     }
 
     printConnections() {
         let count = 0;
-        this.DHT.toJSON().forEach(val => {
+        this.DHT.toJSON().forEach((val) => {
             count += val[1].length;
             process.stdout.write(
-                `  ${String(val[0]).padStart(2, "0")}:  ${val[1][0].nodeID} | port:${val[1][0].port}\n`.inverse
+                `  ${String(val[0]).padStart(2, '0')}:  ${val[1][0].nodeID} | port:${
+                    val[1][0].port
+                }\n`.inverse,
             );
-            val[1].slice(1).forEach((peer, i) => console.log(`       ${peer.nodeID} | port:${peer.port}`.inverse));
+            val[1]
+                .slice(1)
+                .forEach((peer, i) =>
+                    console.log(`       ${peer.nodeID} | port:${peer.port}`.inverse),
+                );
         });
         if (count === 0) {
-            console.log("no connections".inverse);
+            console.log('no connections'.inverse);
         }
         if (count !== this.peers.size) {
             console.log(`ERROR: have ${this.peers.size - count} not removed peers`.bgRed);
