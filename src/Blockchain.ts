@@ -3,8 +3,10 @@ import { Block, BlockType } from './Block';
 import { Transaction, TransactionType } from './Transaction';
 import TransactionPool from './TransactionPool';
 import { Account } from './Account';
+import path from 'path';
+import { Worker } from 'worker_threads';
 
-const DIFFICULTY = 4;
+const DIFFICULTY = 5; // > 7 WILL KILL YOUR CPU :)
 const BLOCK_FEE_LIMIT = 4;
 const MINING_REWARD = 10;
 
@@ -12,11 +14,13 @@ export default class Blockchain {
     public miner: Account;
     public chain: Block[];
     public transactionPool: TransactionPool;
+    private miningWorker: Worker | null;
 
     constructor(miner: Account) {
         this.miner = miner;
         this.chain = [Block.genesisBlock(miner.address)];
         this.transactionPool = new TransactionPool();
+        this.miningWorker = null;
     }
 
     getLastBlock(): Block {
@@ -44,29 +48,46 @@ export default class Blockchain {
         Transaction.executeMiningRewardTransaction(block.minerAddress, totalFees + MINING_REWARD);
     }
 
-    addNewBlock(): BlockType {
-        if (this.transactionPool.pendingTransactions.length === 0) {
-            throw new Error('Too few txs to start mining');
-        }
-        const parent = this.getLastBlock();
+    addNewBlock(): Promise<BlockType> {
+        return new Promise((resolve, reject) => {
+            if (this.transactionPool.pendingTransactions.length === 0) {
+                throw new Error('Too few txs to start mining');
+            }
+            const parent = this.getLastBlock();
 
-        const newBlock = new Block({
-            index: parent.index + 1,
-            previousHash: parent.hash || '',
-            minerAddress: this.miner.address,
-            transactions: this.transactionPool.pickTransactions(BLOCK_FEE_LIMIT),
-            stateRootHash: globalStateStore.getMerkleRootHash(),
-            difficulty: DIFFICULTY,
+            const newBlock = new Block({
+                index: parent.index + 1,
+                previousHash: parent.hash || '',
+                minerAddress: this.miner.address,
+                transactions: this.transactionPool.pickTransactions(BLOCK_FEE_LIMIT),
+                stateRootHash: globalStateStore.getMerkleRootHash(),
+                difficulty: DIFFICULTY,
+            });
+
+            this.miningWorker = new Worker(path.resolve(__dirname, 'mine_script.import.js'));
+
+            this.miningWorker.postMessage({ data: newBlock.toJSON() });
+
+            this.miningWorker.on('message', (msg: { hash: string; nonce: number }) => {
+                newBlock.hash = msg.hash;
+                newBlock.nonce = msg.nonce;
+                Blockchain.executeTransactions(newBlock);
+                this.transactionPool.removeExecuted(newBlock.transactions.map((tx) => tx.hash));
+                this.chain.push(newBlock);
+                this.miningWorker = null;
+                resolve(newBlock.toJSON());
+            });
+
+            this.miningWorker.on('error', (e) => {
+                reject(e);
+                this.miningWorker = null;
+            });
+
+            this.miningWorker.on('exit', (code) => {
+                this.miningWorker = null;
+                if (code !== 0) reject(new Error(`Worker closed with exit code ${code}`));
+            });
         });
-
-        newBlock.mineBlock();
-        Blockchain.executeTransactions(newBlock);
-        this.transactionPool.removeExecuted(newBlock.transactions.map((tx) => tx.hash));
-
-        this.chain.push(newBlock);
-        console.log(newBlock.toJSON());
-
-        return newBlock.toJSON();
     }
 
     static verifyBlock(block: Block, prevBlock: Block): boolean {
@@ -97,6 +118,12 @@ export default class Blockchain {
 
     addReceivedBlock(block: Block) {
         if (Blockchain.verifyBlock(block, this.getLastBlock())) {
+            // kill current mining process
+            if (this.miningWorker !== null) {
+                this.miningWorker.terminate();
+                console.log('MINING TERMINATED'.bgRed);
+            }
+
             Blockchain.executeTransactions(block);
             this.transactionPool.removeExecuted(block.transactions.map((tx) => tx.hash));
             this.chain.push(block);

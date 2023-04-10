@@ -103,26 +103,12 @@ export class Block {
             .createHash('sha3-256')
             .update(
                 block.index +
-                    (block.timestamp || 0) +
+                    block.timestamp +
                     block.previousHash +
                     block.transactionsRootHash +
                     block.nonce,
             )
             .digest();
-    }
-
-    mineBlock(): void {
-        // "000...00xxxxxxx" - PoW: hash starts with N=difficulty zeros in hex form
-
-        let hash = Block.calculateHash(this).toString('hex');
-
-        while (!hash.startsWith('0'.repeat(this.difficulty))) {
-            this.nonce++;
-            hash = Block.calculateHash(this).toString('hex'); // rehash with new nonce
-        }
-
-        this.hash = hash;
-        console.log('Block mined: ' + this.hash);
     }
 
     toJSON(): BlockType {

@@ -114,23 +114,32 @@ export default class Node {
     }
 
     initServer(): void {
-        this.server.on('connection', (socket) => {
-            console.log(
-                `[node ${this.port} | server] established connection with port=${socket.remotePort}`
-                    .yellow,
-            );
+        const serverStart: Promise<void> = new Promise((resolve, reject) => {
+            this.server.on('connection', (socket) => {
+                console.log(
+                    `[node ${this.port} | server] established connection with port=${socket.remotePort}`
+                        .yellow,
+                );
 
-            if (socket.remotePort) {
-                this.handleConnection('server', socket);
-            } else {
-                console.log(`[node ${this.port} | server] connection invalid`.black.bgRed);
-            }
+                if (socket.remotePort) {
+                    this.handleConnection('server', socket);
+                } else {
+                    console.log(`[node ${this.port} | server] connection invalid`.black.bgRed);
+                }
+            });
+
+            this.server.listen({ port: this.port, host: LOCALHOST }, () => {
+                console.log(`[node ${this.port} | server] server listening on port=${this.port}`);
+                console.log(`           | id: ${this.nodeID}`);
+                resolve();
+            });
         });
 
-        this.server.listen({ port: this.port, host: LOCALHOST }, () => {
-            console.log(`[node ${this.port} | server] server listening on port=${this.port}`);
-            console.log(`           | id: ${this.nodeID}`);
-        });
+        serverStart
+            .then(() => {
+                this.joinNetwork();
+            })
+            .catch(() => console.log(`[node ${this.port} | server] server failed to start`));
     }
 
     joinNetwork(): void {
@@ -169,35 +178,45 @@ export default class Node {
         });
     }
 
-    connectToClosestNode(peer: Peer): void {
-        console.log(`Trying to connect to port=${peer.port}...`);
-        const socket = net.createConnection({ port: peer.port }, () => {
-            console.log(
-                `[node ${this.port} | client] established connection with port=${peer.port}`.yellow,
-            );
+    connectToClosestNode(peer: Peer): Promise<void> {
+        return new Promise((resolve, reject) => {
+            console.log(`Trying to connect to port=${peer.port}...`);
+            const socket = net.createConnection({ port: peer.port }, () => {
+                console.log(
+                    `[node ${this.port} | client] established connection with port=${peer.port}`
+                        .yellow,
+                );
 
-            const message = {
-                content: {
-                    nodeID: this.nodeID,
-                    port: this.port,
-                } as Peer,
-            };
+                const message = {
+                    content: {
+                        nodeID: this.nodeID,
+                        port: this.port,
+                    } as Peer,
+                };
 
-            this.peers.set(peer.nodeID, { socket, peer });
+                this.peers.set(peer.nodeID, { socket, peer });
 
-            this.sendData(socket, MESSAGE_TYPE.HANDSHAKE, message, peer);
-            this.handleConnection('client', socket, peer);
+                this.sendData(socket, MESSAGE_TYPE.HANDSHAKE, message, peer);
+                this.handleConnection('client', socket);
+                resolve();
+            });
+
+            socket.on('error', (err) => {
+                console.log(`[node ${this.port} | client] node unavaliable ${err.name}`.red);
+                reject(`port=${peer.port}`);
+            });
         });
     }
 
-    handleConnection(type: 'client' | 'server', socket: net.Socket, peer?: Peer): void {
+    handleConnection(type: 'client' | 'server', socket: net.Socket): void {
         socket.on('data', (response) => {
+            const peer = Array.from(this.peers.values()).find((val) => val.socket === socket)?.peer;
             console.log(
                 `[node ${this.port} | ${type}] received message from ${
                     peer ? `port=${peer.port}` : `UNKNOWN port=${socket.remotePort}`
                 }`.cyan,
             );
-
+            // console.log('res', response.toString());
             let data: { type: MESSAGE_TYPE | PUBLICATION_TYPE; message: string } = JSON.parse(
                 response.toString(),
             );
@@ -271,24 +290,16 @@ export default class Node {
                         return console.log('invalid nodes'.red);
                     }
 
-                    content.nodes.forEach((peer) => {
-                        this.DHT.addNewNode(peer); // can't return evicted here
-                        this.connectToClosestNode(peer);
+                    Promise.allSettled(
+                        content.nodes.map((peer) => {
+                            this.DHT.addNewNode(peer); // can't return evicted here
+                            return this.connectToClosestNode(peer);
+                        }),
+                    ).then(() => {
+                        console.log('nodes added'.green);
+                        // publishing new account
+                        this.publish(PUBLICATION_TYPE.PUB_NEW_ACCOUNT, this.info.account.toJSON());
                     });
-
-                    console.log('nodes added'.green);
-
-                    // publishing new account
-
-                    setTimeout(
-                        () =>
-                            this.publish(
-                                PUBLICATION_TYPE.PUB_NEW_ACCOUNT,
-                                this.info.account.toJSON(),
-                            ),
-                        2000,
-                    );
-
                     break;
                 }
 
@@ -307,6 +318,11 @@ export default class Node {
                     // working with data
 
                     switch (data.type) {
+                        case PUBLICATION_TYPE.PUB_PING: {
+                            console.log(msg.content);
+                            break;
+                        }
+
                         case PUBLICATION_TYPE.PUB_NEW_ACCOUNT: {
                             try {
                                 const content: AccountType = msg.content;
@@ -368,18 +384,18 @@ export default class Node {
         });
 
         socket.on('error', (err) => {
+            const peer = Array.from(this.peers.values()).find((val) => val.socket === socket)?.peer;
+            if (peer) {
+                process.stdout.write(`removing ${peer.nodeID} on port=${peer.port}... `);
+                console.log(this.DHT.removeNode(peer.nodeID) ? 'removed'.green : 'not removed'.red);
+                this.peers.delete(peer.nodeID);
+            }
             console.log(
                 `[node ${this.port} | ${type}] connection failed ${err.name}: ${err.message}`.red,
             );
         });
 
         socket.on('close', () => {
-            if (peer) {
-                process.stdout.write(`removing ${peer.nodeID} on port=${peer.port}... `);
-                console.log(this.DHT.removeNode(peer.nodeID) ? 'removed'.green : 'not removed'.red);
-                this.peers.delete(peer.nodeID);
-            }
-
             console.log(
                 `[node ${this.port} | ${type}] connection closed with port=${socket.remotePort}`,
             );
@@ -414,7 +430,7 @@ export default class Node {
             content,
         };
 
-        console.log(`broadcasting ${type} with hash ${data.hash} to ${this.peers.size} peers`);
+        console.log(`broadcasting ${type} to ${this.peers.size + (this.bootSocket ? 1 : 0)} peers`);
 
         const subType = `SUB${type.slice(3)}` as SUBSCRIPTION_TYPE;
         this.subscriptions.get(subType)?.addHash(data.hash); // to not receive own publication
@@ -438,12 +454,14 @@ export default class Node {
     }
 
     mineBlock() {
-        try {
-            const newBlock = this.info.blockchain.addNewBlock();
-            this.publish(PUBLICATION_TYPE.PUB_NEW_BLOCK, newBlock);
-        } catch (e) {
-            console.log(`Mining rejected: ${e}`);
-        }
+        this.info.blockchain
+            .addNewBlock()
+            .then((block) => {
+                console.log(block);
+                this.publish(PUBLICATION_TYPE.PUB_NEW_BLOCK, block);
+            })
+            .catch((e) => console.log(`Mining rejected: ${e}`));
+        console.log('its not blocked');
     }
 
     printPool() {
